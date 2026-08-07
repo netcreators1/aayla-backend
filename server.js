@@ -4,14 +4,11 @@ const { WebSocketServer } = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const OpenAI = require('openai');
 const { processIntent } = require('./pmsHandler');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Utility to create a WAV header for 16-bit, 16kHz, mono PCM
 function createWavHeader(dataLength) {
