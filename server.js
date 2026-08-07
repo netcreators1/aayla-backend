@@ -136,7 +136,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
   } catch (error) {
     console.error("Error processing audio:", error);
-    ws.send(JSON.stringify({ type: "error", message: "Server error" }));
+    // Send the actual error message to the ESP32 so we can see what's wrong!
+    ws.send(JSON.stringify({ type: "error", message: error.message || "Unknown Server Error" }));
   }
 }
 
