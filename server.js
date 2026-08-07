@@ -67,24 +67,24 @@ async function processAudio(pcmBuffer, ws, roomId) {
   try {
     ws.send(JSON.stringify({ type: "trace", message: `Received ${pcmBuffer.length} bytes of audio.` }));
     
-    // 1. Create WAV file from PCM data
+    // 1. Create WAV file from PCM data in memory (no disk needed)
     const wavHeader = createWavHeader(pcmBuffer.length);
     const wavBuffer = Buffer.concat([wavHeader, pcmBuffer]);
     
-    const tempFilePath = path.join(__dirname, `temp_${Date.now()}.wav`);
-    fs.writeFileSync(tempFilePath, wavBuffer);
-
     ws.send(JSON.stringify({ type: "trace", message: "Calling OpenAI Whisper (Speech-to-Text)..." }));
     
     // 2. Speech-to-Text (Whisper)
+    // We use OpenAI's toFile utility to send the buffer directly, 
+    // bypassing Node 24's fs.createReadStream fetch bugs!
+    const { toFile } = require('openai');
+    const audioFile = await toFile(wavBuffer, 'audio.wav', { type: 'audio/wav' });
+
     const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(tempFilePath),
+      file: audioFile,
       model: "whisper-1",
     });
     
     const userText = transcription.text;
-    fs.unlinkSync(tempFilePath); // Cleanup
-
     ws.send(JSON.stringify({ type: "trace", message: `Heard: "${userText}"` }));
 
     if (!userText || userText.trim() === "") {
