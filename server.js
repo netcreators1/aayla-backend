@@ -37,10 +37,10 @@ wss.on('connection', (ws) => {
   let audioBuffer = [];
   let roomId = "UNKNOWN";
 
-  ws.on('message', async (message) => {
-    if (typeof message === 'string') {
+  ws.on('message', async (message, isBinary) => {
+    if (!isBinary) {
       try {
-        const data = JSON.parse(message);
+        const data = JSON.parse(message.toString());
         if (data.type === 'start') {
           console.log(`Started recording for Room: ${data.roomId}`);
           roomId = data.roomId;
@@ -50,9 +50,9 @@ wss.on('connection', (ws) => {
           await processAudio(Buffer.concat(audioBuffer), ws, roomId);
         }
       } catch (e) {
-        console.error("Invalid JSON command:", message);
+        console.error("Invalid JSON command:", message.toString());
       }
-    } else if (Buffer.isBuffer(message)) {
+    } else {
       // Append raw PCM data to buffer
       audioBuffer.push(message);
     }
