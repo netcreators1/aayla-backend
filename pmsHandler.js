@@ -34,12 +34,12 @@ async function processIntent(intentText, roomId) {
       // Send Food & Liquor orders to the exact foodOrders path in the PMS
       const orderRef = db.ref(`foodOrders`).push();
       
-      // Convert the string array ["coffee"] into an array of objects that the PMS frontend can render
-      const formattedItems = intent.items.map(item => ({
-        name: item,
-        quantity: 1,
-        price: 0
-      }));
+      // The PMS expects `items` to be a dictionary of item names to quantities, e.g. {"Coffee": 1}
+      const formattedItems = {};
+      intent.items.forEach(item => {
+        const capitalized = item.charAt(0).toUpperCase() + item.slice(1);
+        formattedItems[capitalized] = 1;
+      });
 
       const payload = {
         room: roomId || "UNKNOWN",
@@ -47,7 +47,7 @@ async function processIntent(intentText, roomId) {
         orderClass: "Room",
         orderType: "food",
         items: formattedItems,
-        status: "preparing",
+        status: "new", // "new" triggers the PMS sound notification!
         cgst: 0,
         sgst: 0,
         flatTax: 0,
