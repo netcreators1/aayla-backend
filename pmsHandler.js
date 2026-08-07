@@ -31,27 +31,33 @@ async function processIntent(intentText, roomId) {
     const intent = JSON.parse(intentText);
     
     if (intent.action === "order_food") {
-      const orderRef = db.ref(`pos/restaurant/orders`).push();
+      // Send Food & Liquor orders to the Food & Bar Menu under the specific Room ID
+      const orderRef = db.ref(`Food & Bar Menu/${roomId || "UNKNOWN"}`).push();
+      
+      const details = intent.items.join(", ");
       await orderRef.set({
-        roomId: roomId || "UNKNOWN",
-        items: intent.items,
+        items: details,
         status: "pending",
         timestamp: admin.database.ServerValue.TIMESTAMP,
         source: "VoiceBot Aayla"
       });
-      return `I have placed an order for ${intent.items.join(", ")}. It will be delivered to your room shortly.`;
+
+      return `I have placed an order for ${details}. It will be delivered to your room shortly.`;
     } 
-    
     else if (intent.action === "housekeeping") {
-      const hkRef = db.ref(`housekeeping/requests`).push();
-      await hkRef.set({
+      // Send Housekeeping requests to standard room_requests
+      const requestRef = db.ref(`room_requests`).push();
+      
+      await requestRef.set({
         roomId: roomId || "UNKNOWN",
-        task: intent.task,
+        type: "Housekeeping",
+        details: intent.task,
         status: "pending",
         timestamp: admin.database.ServerValue.TIMESTAMP,
         source: "VoiceBot Aayla"
       });
-      return `I have notified housekeeping to ${intent.task}. They will be with you shortly.`;
+
+      return `I have notified the staff to ${intent.task}. They will be with you shortly.`;
     }
     
     else if (intent.action === "general_query") {
