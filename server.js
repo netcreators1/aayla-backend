@@ -160,9 +160,12 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
     
     // Chunk the audio data so we don't crash the ESP32's tiny RAM!
-    const chunkSize = 4096;
+    const chunkSize = 4096; // ~85ms of audio at 24kHz 16-bit
+    const delay = ms => new Promise(res => setTimeout(res, ms));
+    
     for (let i = 0; i < pcmResponseData.length; i += chunkSize) {
       ws.send(pcmResponseData.slice(i, i + chunkSize));
+      await delay(50); // Throttle the stream so we don't overflow the ESP32's network buffer!
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
