@@ -65,15 +65,17 @@ wss.on('connection', (ws) => {
 
 async function processAudio(pcmBuffer, ws, roomId) {
   try {
+    ws.send(JSON.stringify({ type: "trace", message: `Received ${pcmBuffer.length} bytes of audio.` }));
+    
     // 1. Create WAV file from PCM data
     const wavHeader = createWavHeader(pcmBuffer.length);
     const wavBuffer = Buffer.concat([wavHeader, pcmBuffer]);
     
-    // Create a temporary file to send to OpenAI
     const tempFilePath = path.join(__dirname, `temp_${Date.now()}.wav`);
     fs.writeFileSync(tempFilePath, wavBuffer);
 
-    console.log('Transcribing audio...');
+    ws.send(JSON.stringify({ type: "trace", message: "Calling OpenAI Whisper (Speech-to-Text)..." }));
+    
     // 2. Speech-to-Text (Whisper)
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempFilePath),
@@ -81,15 +83,17 @@ async function processAudio(pcmBuffer, ws, roomId) {
     });
     
     const userText = transcription.text;
-    console.log(`Transcribed text: "${userText}"`);
     fs.unlinkSync(tempFilePath); // Cleanup
+
+    ws.send(JSON.stringify({ type: "trace", message: `Heard: "${userText}"` }));
 
     if (!userText || userText.trim() === "") {
         ws.send(JSON.stringify({ type: "error", message: "No speech detected" }));
         return;
     }
 
-    console.log('Determining intent...');
+    ws.send(JSON.stringify({ type: "trace", message: "Calling GPT-4o for Intent..." }));
+    
     // 3. LLM Intent Parsing
     const prompt = `You are Aayla, an AI voice assistant for a hotel room.
     Extract the intent from the guest's request.
@@ -107,36 +111,28 @@ async function processAudio(pcmBuffer, ws, roomId) {
     });
 
     const intentJSON = completion.choices[0].message.content;
-    console.log("Intent Parsed:", intentJSON);
+    ws.send(JSON.stringify({ type: "trace", message: `Intent Parsed: ${intentJSON}` }));
 
     // 4. Update PMS (Firebase) and get response text
+    ws.send(JSON.stringify({ type: "trace", message: "Updating Firebase..." }));
     const responseText = await processIntent(intentJSON, roomId);
-    console.log(`Response text: "${responseText}"`);
+    ws.send(JSON.stringify({ type: "trace", message: `Firebase Updated! Response: ${responseText}` }));
 
     // 5. Text-to-Speech
-    console.log('Generating audio response...');
+    ws.send(JSON.stringify({ type: "trace", message: "Calling OpenAI TTS..." }));
     const mp3Response = await openai.audio.speech.create({
       model: "tts-1",
-      voice: "nova", // Female voice for Aayla
+      voice: "nova",
       input: responseText,
-      response_format: "pcm" // Ask for raw PCM back! 24kHz 16-bit mono.
+      response_format: "pcm"
     });
 
     const pcmResponseData = Buffer.from(await mp3Response.arrayBuffer());
-    
-    // We send a JSON metadata packet first, followed by the raw PCM data
     ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
-    
-    // Send raw PCM data to ESP32 for I2S playback
-    // Since OpenAI returns 24kHz PCM, the ESP32 must configure its I2S playback to 24000Hz.
-    // Or we could downsample to 16kHz here, but it's easier to change I2S freq on ESP32 dynamically.
     ws.send(pcmResponseData);
     
-    console.log("Audio response sent back to ESP32.");
-
   } catch (error) {
     console.error("Error processing audio:", error);
-    // Send the actual error message to the ESP32 so we can see what's wrong!
     ws.send(JSON.stringify({ type: "error", message: error.message || "Unknown Server Error" }));
   }
 }
