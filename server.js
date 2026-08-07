@@ -67,30 +67,28 @@ async function processAudio(pcmBuffer, ws, roomId) {
   try {
     ws.send(JSON.stringify({ type: "trace", message: `Received ${pcmBuffer.length} bytes of audio.` }));
     
-    // 1. Create WAV file from PCM data in memory (no disk needed)
+    // 1. Create WAV file from PCM data in memory
     const wavHeader = createWavHeader(pcmBuffer.length);
     const wavBuffer = Buffer.concat([wavHeader, pcmBuffer]);
     
-    ws.send(JSON.stringify({ type: "trace", message: "Calling OpenAI Whisper (Speech-to-Text)..." }));
+    ws.send(JSON.stringify({ type: "trace", message: "Calling Groq Whisper (Speech-to-Text)..." }));
     
-    // 2. Speech-to-Text (Whisper)
-    // We completely bypass the OpenAI SDK here and use native fetch because 
-    // the SDK has known FormData bugs with Node 24 causing "Connection error."
+    // 2. Speech-to-Text (Groq Whisper-large-v3)
     const formData = new FormData();
     formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
-    formData.append('model', 'whisper-1');
+    formData.append('model', 'whisper-large-v3');
 
-    const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
       },
       body: formData
     });
 
     if (!whisperResponse.ok) {
       const errText = await whisperResponse.text();
-      throw new Error(`Whisper API Failed: ${whisperResponse.status} - ${errText}`);
+      throw new Error(`Groq STT Failed: ${whisperResponse.status} - ${errText}`);
     }
 
     const transcription = await whisperResponse.json();
@@ -102,9 +100,9 @@ async function processAudio(pcmBuffer, ws, roomId) {
         return;
     }
 
-    ws.send(JSON.stringify({ type: "trace", message: "Calling GPT-4o for Intent..." }));
+    ws.send(JSON.stringify({ type: "trace", message: "Calling Groq Llama-3 for Intent..." }));
     
-    // 3. LLM Intent Parsing
+    // 3. LLM Intent Parsing (Groq Llama-3)
     const prompt = `You are Aayla, an AI voice assistant for a hotel room.
     Extract the intent from the guest's request.
     Respond with ONLY a JSON object in one of these formats:
@@ -114,13 +112,26 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     Guest request: "${userText}"`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" }
+    const llmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: "llama3-8b-8192",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" }
+      })
     });
 
-    const intentJSON = completion.choices[0].message.content;
+    if (!llmResponse.ok) {
+      const errText = await llmResponse.text();
+      throw new Error(`Groq LLM Failed: ${llmResponse.status} - ${errText}`);
+    }
+
+    const llmData = await llmResponse.json();
+    const intentJSON = llmData.choices[0].message.content;
     ws.send(JSON.stringify({ type: "trace", message: `Intent Parsed: ${intentJSON}` }));
 
     // 4. Update PMS (Firebase) and get response text
@@ -128,16 +139,27 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const responseText = await processIntent(intentJSON, roomId);
     ws.send(JSON.stringify({ type: "trace", message: `Firebase Updated! Response: ${responseText}` }));
 
-    // 5. Text-to-Speech
-    ws.send(JSON.stringify({ type: "trace", message: "Calling OpenAI TTS..." }));
-    const mp3Response = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: "nova",
-      input: responseText,
-      response_format: "pcm"
+    // 5. Text-to-Speech (Deepgram - Free Tier, returns raw PCM)
+    ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
+    
+    // Deepgram Aura Asteria (Female voice)
+    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=24000', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: responseText
+      })
     });
 
-    const pcmResponseData = Buffer.from(await mp3Response.arrayBuffer());
+    if (!ttsResponse.ok) {
+      const errText = await ttsResponse.text();
+      throw new Error(`Deepgram TTS Failed: ${ttsResponse.status} - ${errText}`);
+    }
+
+    const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
     ws.send(pcmResponseData);
     
