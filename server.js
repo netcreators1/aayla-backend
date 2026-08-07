@@ -74,16 +74,26 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: "Calling OpenAI Whisper (Speech-to-Text)..." }));
     
     // 2. Speech-to-Text (Whisper)
-    // We use OpenAI's toFile utility to send the buffer directly, 
-    // bypassing Node 24's fs.createReadStream fetch bugs!
-    const { toFile } = require('openai');
-    const audioFile = await toFile(wavBuffer, 'audio.wav', { type: 'audio/wav' });
+    // We completely bypass the OpenAI SDK here and use native fetch because 
+    // the SDK has known FormData bugs with Node 24 causing "Connection error."
+    const formData = new FormData();
+    formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
+    formData.append('model', 'whisper-1');
 
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: "whisper-1",
+    const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: formData
     });
-    
+
+    if (!whisperResponse.ok) {
+      const errText = await whisperResponse.text();
+      throw new Error(`Whisper API Failed: ${whisperResponse.status} - ${errText}`);
+    }
+
+    const transcription = await whisperResponse.json();
     const userText = transcription.text;
     ws.send(JSON.stringify({ type: "trace", message: `Heard: "${userText}"` }));
 
