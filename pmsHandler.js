@@ -15,7 +15,7 @@ try {
 if (serviceAccount && !admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: "https://pmshotel-a0426-default-rtdb.firebaseio.com"
+    databaseURL: "https://my-shagun-pms-100-default-rtdb.firebaseio.com"
   });
 }
 
@@ -31,18 +31,35 @@ async function processIntent(intentText, roomId) {
     const intent = JSON.parse(intentText);
     
     if (intent.action === "order_food") {
-      // Send Food & Liquor orders to the Food & Bar Menu under the specific Room ID
-      const orderRef = db.ref(`Food & Bar Menu/${roomId || "UNKNOWN"}`).push();
+      // Send Food & Liquor orders to the exact foodOrders path in the PMS
+      const orderRef = db.ref(`foodOrders`).push();
       
-      const details = intent.items.join(", ");
-      await orderRef.set({
-        items: details,
-        status: "pending",
+      // Convert the string array ["coffee"] into an array of objects that the PMS frontend can render
+      const formattedItems = intent.items.map(item => ({
+        name: item,
+        quantity: 1,
+        price: 0
+      }));
+
+      const payload = {
+        room: roomId || "UNKNOWN",
+        guestName: "VoiceBot Guest",
+        orderClass: "Room",
+        orderType: "food",
+        items: formattedItems,
+        status: "preparing",
+        cgst: 0,
+        sgst: 0,
+        flatTax: 0,
         timestamp: admin.database.ServerValue.TIMESTAMP,
         source: "VoiceBot Aayla"
-      });
+      };
 
-      return `I have placed an order for ${details}. It will be delivered to your room shortly.`;
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out. Check Database URL.")), 5000));
+      await Promise.race([orderRef.set(payload), timeout]);
+
+      const details = intent.items.join(" and ");
+      return `Your order for ${details} has been accepted and is currently being processed. It will be delivered to your room in approximately 15 minutes.`;
     } 
     else if (intent.action === "housekeeping") {
       // Send Housekeeping requests to standard room_requests
