@@ -104,6 +104,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     // 3. LLM Intent Parsing (Groq Llama-3)
     const prompt = `You are Aayla, an AI voice assistant for a hotel room.
     Extract the intent from the guest's request.
+    CRITICAL: If the guest asks for ANY food, drinks, or beverages (like coffee, tea, water, beer), YOU MUST categorize it as "order_food".
+    
     Respond with ONLY a JSON object in one of these formats:
     - {"action": "order_food", "items": ["item1", "item2"]}
     - {"action": "housekeeping", "task": "description of task"}
