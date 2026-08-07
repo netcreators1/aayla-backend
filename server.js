@@ -158,7 +158,15 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
-    ws.send(pcmResponseData);
+    
+    // Chunk the audio data so we don't crash the ESP32's tiny RAM!
+    const chunkSize = 4096;
+    for (let i = 0; i < pcmResponseData.length; i += chunkSize) {
+      ws.send(pcmResponseData.slice(i, i + chunkSize));
+    }
+    
+    // Tell the ESP32 we are done sending audio so it can go back to IDLE
+    ws.send(JSON.stringify({ type: 'audio_end' }));
     
   } catch (error) {
     console.error("Error processing audio:", error);
