@@ -74,8 +74,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const formData = new FormData();
     formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
     formData.append('model', 'whisper-large-v3');
-    formData.append('language', 'en'); // Force English to prevent accent misinterpretation
-    formData.append('prompt', 'A hotel guest is speaking in Indian English to an AI assistant named Aayla. For example: "Aayla, can you order coffee for me?"');
+    formData.append('language', 'en'); // Force English output
+    formData.append('prompt', 'A hotel guest is asking for room service. Examples: "Order coffee", "I need water", "Send a burger".');
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
@@ -85,28 +85,20 @@ async function processAudio(pcmBuffer, ws, roomId) {
       body: formData
     });
 
-    if (!whisperResponse.ok) {
-      const errText = await whisperResponse.text();
-      throw new Error(`Groq STT Failed: ${whisperResponse.status} - ${errText}`);
-    }
-
-    const transcription = await whisperResponse.json();
-    const userText = transcription.text;
-    ws.send(JSON.stringify({ type: "trace", message: `Heard: "${userText}"` }));
-
-    if (!userText || userText.trim() === "") {
-        ws.send(JSON.stringify({ type: "error", message: "No speech detected" }));
-        return;
-    }
-
-    ws.send(JSON.stringify({ type: "trace", message: "Calling Groq Llama-3 for Intent..." }));
+    const whisperData = await whisperResponse.json();
+    if (whisperData.error) throw new Error("Groq STT Failed: " + JSON.stringify(whisperData.error));
     
+    const userText = whisperData.text.trim();
+    ws.send(JSON.stringify({ type: 'trace', message: `Heard: "${userText}"` }));
+
+    ws.send(JSON.stringify({ type: 'trace', message: 'Calling Groq Llama-3 for Intent...' }));
+
     // 3. LLM Intent Parsing (Groq Llama-3)
-    const prompt = `You are Aayla, an AI voice assistant for a hotel room.
+    const prompt = `You are Aayla, a professional English-speaking hotel AI assistant.
     Extract the intent from the guest's request.
-    CRITICAL: If the guest asks for ANY food, drinks, or beverages (like coffee, tea, water, beer), YOU MUST categorize it as "order_food".
+    CRITICAL RULE: If the guest asks for ANY food, drinks, or beverages (e.g., coffee, tea, water, beer), you MUST output "order_food". Do not reply conversationally.
     
-    Respond with ONLY a JSON object in one of these formats:
+    Respond with ONLY a JSON object in exactly one of these formats:
     - {"action": "order_food", "items": ["item1", "item2"]}
     - {"action": "housekeeping", "task": "description of task"}
     - {"action": "general_query", "response": "Your spoken answer to their general question as Aayla."}
