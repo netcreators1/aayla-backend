@@ -75,7 +75,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
     formData.append('model', 'whisper-large-v3');
     formData.append('language', 'en'); // Force English output
-    formData.append('prompt', 'A hotel guest is asking for room service. Examples: "Order coffee", "I need water", "Send a burger".');
+    formData.append('prompt', 'A hotel guest is asking for room service or housekeeping. Examples: "Order coffee", "Pick up my laundry", "Clean my room", "I need fresh towels".');
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
@@ -102,7 +102,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     3. If the guest asks for laundry service, ironing, or washing clothes, output "laundry".
     
     Respond with ONLY a JSON object in exactly one of these formats:
-    - {"action": "order_food", "items": ["Tea", "Coffee"]} (CRITICAL: The items array MUST contain the exact specific nouns the user asked for. NEVER use generic category names like "Room_service_menuitems".)
+    - {"action": "order_food", "items": ["<noun1>", "<noun2>"]} (CRITICAL: Replace <noun> with the exact specific food/drink nouns the user asked for. NEVER use generic category names.)
     - {"action": "housekeeping", "task": "description of task"}
     - {"action": "laundry", "task": "description of laundry request"}
     - {"action": "general_query", "response": "Your spoken answer to their general question as Aayla."}
