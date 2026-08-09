@@ -85,7 +85,8 @@ async function processIntent(intentText, roomId) {
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out.")), 5000));
       await Promise.race([requestRef.set(payload), timeout]);
 
-      return `I have notified the staff to ${intent.task}. They will be with you shortly.`;
+      const team = intent.action === "laundry" ? "laundry team" : "housekeeping staff";
+      return `I have notified the ${team} to ${intent.task}. They will be with you shortly.`;
     }
     
     else if (intent.action === "general_query") {
