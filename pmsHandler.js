@@ -61,18 +61,29 @@ async function processIntent(intentText, roomId) {
       const details = intent.items.join(" and ");
       return `Your order for ${details} has been accepted and is currently being processed. It will be delivered to your room in approximately 15 minutes.`;
     } 
-    else if (intent.action === "housekeeping") {
-      // Send Housekeeping requests to standard room_requests
-      const requestRef = db.ref(`room_requests`).push();
+    else if (intent.action === "housekeeping" || intent.action === "laundry") {
+      // Send Housekeeping & Laundry requests to Room Requests
+      const requestRef = db.ref(`roomRequests`).push();
       
-      await requestRef.set({
+      const now = new Date();
+      // Format as DD/MM/YYYY and HH:MM AM/PM
+      const dateStr = now.toLocaleDateString('en-IN');
+      const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      
+      const payload = {
         roomId: roomId || "UNKNOWN",
-        type: "Housekeeping",
+        room: roomId || "UNKNOWN", // Include both to be safe against different schema expectations
+        type: intent.action === "laundry" ? "Laundry" : "Housekeeping",
         details: intent.task,
-        status: "pending",
+        date: dateStr,
+        time: timeStr,
+        status: "new",
         timestamp: admin.database.ServerValue.TIMESTAMP,
         source: "VoiceBot Aayla"
-      });
+      };
+
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out.")), 5000));
+      await Promise.race([requestRef.set(payload), timeout]);
 
       return `I have notified the staff to ${intent.task}. They will be with you shortly.`;
     }
