@@ -62,29 +62,28 @@ async function processIntent(intentText, roomId) {
       return `Your order for ${details} has been accepted and is currently being processed. It will be delivered to your room in approximately 15 minutes.`;
     } 
     else if (intent.action === "housekeeping" || intent.action === "laundry") {
-      // Send Housekeeping & Laundry requests to Room Requests
-      const requestRef = db.ref(`roomRequests`).push();
+      // The PMS reads from distinct top-level nodes for different departments
+      const nodeName = intent.action === "laundry" ? "laundry" : "housekeeping";
+      const requestRef = db.ref(nodeName).push();
       
       const now = new Date();
-      // Format as DD/MM/YYYY and HH:MM AM/PM
       const dateStr = now.toLocaleDateString('en-IN');
       const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
       
+      // The PMS dashboard expects the task to be inside an `items` dictionary (just like food)
+      const formattedItems = {};
+      // Capitalize the first letter of the task for better display
+      const displayTask = intent.task.charAt(0).toUpperCase() + intent.task.slice(1);
+      formattedItems[displayTask] = 1;
+
       const payload = {
-        roomId: roomId || "UNKNOWN",
-        room: roomId || "UNKNOWN", 
-        roomNo: roomId || "UNKNOWN",
+        room: roomId || "UNKNOWN",
         guestName: "VoiceBot Guest",
-        guest: "VoiceBot Guest",
-        type: intent.action === "laundry" ? "Laundry" : "Housekeeping",
-        details: intent.task,
-        request: intent.task,
-        task: intent.task,
-        item: intent.task,
-        date: dateStr,
-        time: timeStr,
+        items: formattedItems,
+        notes: "",
+        priority: "Normal",
         status: "new",
-        timestamp: admin.database.ServerValue.TIMESTAMP,
+        timestamp: new Date().toISOString(), // Match screenshot's ISO string format
         source: "VoiceBot Aayla"
       };
 
