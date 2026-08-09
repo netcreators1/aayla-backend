@@ -101,7 +101,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     1. If the guest asks for ANY food, drinks, or beverages, output "order_food".
     2. If the guest asks for room cleaning, fresh towels, amenities, or maintenance, output "housekeeping".
     3. If the guest asks for laundry service, ironing, or washing clothes, output "laundry".
-    4. If the guest says "Thank you for watching", "subscribe", or anything about YouTube, it means the microphone recorded silence. You MUST output general_query saying: "I couldn't hear you clearly. Please check your microphone wires and try speaking closer to the mic."
+    4. If the guest says "Thank you for watching", "subscribe", "Examples is asking for room service", or anything about YouTube, it means the microphone recorded silence. You MUST output general_query saying: "I couldn't hear you clearly. Please check your microphone wires and try speaking closer to the mic."
     
     Respond with ONLY a JSON object in exactly one of these formats:
     - {"action": "order_food", "items": ["<noun1>", "<noun2>"]} (CRITICAL: Replace <noun> with the exact specific food/drink nouns the user asked for. NEVER use generic category names.)
