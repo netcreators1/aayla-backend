@@ -72,9 +72,15 @@ async function processIntent(intentText, roomId) {
       
       const payload = {
         roomId: roomId || "UNKNOWN",
-        room: roomId || "UNKNOWN", // Include both to be safe against different schema expectations
+        room: roomId || "UNKNOWN", 
+        roomNo: roomId || "UNKNOWN",
+        guestName: "VoiceBot Guest",
+        guest: "VoiceBot Guest",
         type: intent.action === "laundry" ? "Laundry" : "Housekeeping",
         details: intent.task,
+        request: intent.task,
+        task: intent.task,
+        item: intent.task,
         date: dateStr,
         time: timeStr,
         status: "new",
