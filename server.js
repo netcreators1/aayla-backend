@@ -74,7 +74,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const formData = new FormData();
     formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
     formData.append('model', 'whisper-large-v3');
-    formData.append('language', 'en'); // Force English output
+    formData.append('language', 'en'); 
+    formData.append('temperature', '0.0'); // Force deterministic output to prevent YouTube hallucinations on silence
     formData.append('prompt', 'A hotel guest is asking for room service or housekeeping. Examples: "Order coffee", "Pick up my laundry", "Clean my room", "I need fresh towels".');
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
