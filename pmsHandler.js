@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const Papa = require('papaparse');
 
 // We use the same service account as the Aiosell integration
 let serviceAccount;
@@ -21,6 +22,58 @@ if (serviceAccount && !admin.apps.length) {
 
 const db = admin.apps.length ? admin.database() : null;
 
+const PUBLIC_MENU_URL = "https://docs.google.com/spreadsheets/d/1t1fewWf5izb958lm16CCwrZYkYi3lM_bh2auilnuz_M/export?format=csv&gid=0";
+const PUBLIC_LIQUOR_URL = "https://docs.google.com/spreadsheets/d/1t1fewWf5izb958lm16CCwrZYkYi3lM_bh2auilnuz_M/export?format=csv&gid=419553995";
+
+let menuCache = null;
+let lastFetch = 0;
+
+async function fetchMenuPrices() {
+  const now = Date.now();
+  if (menuCache && now - lastFetch < 1000 * 60 * 60) {
+    return menuCache; // cache for 1 hour
+  }
+  
+  const prices = {};
+  
+  try {
+    const foodRes = await fetch(PUBLIC_MENU_URL);
+    const foodCsv = await foodRes.text();
+    Papa.parse(foodCsv, {
+      header: true,
+      complete: (results) => {
+        results.data.forEach(item => {
+          const name = item['Item Name'] || item.ItemName;
+          if (name && item.Price) {
+            prices[name.trim().toLowerCase()] = Number(item.Price);
+          }
+        });
+      }
+    });
+
+    const liquorRes = await fetch(PUBLIC_LIQUOR_URL);
+    const liquorCsv = await liquorRes.text();
+    Papa.parse(liquorCsv, {
+      header: true,
+      complete: (results) => {
+        results.data.forEach(item => {
+          const name = item['Item Name'] || item.ItemName;
+          if (name && item.Price) {
+            prices[name.trim().toLowerCase()] = Number(item.Price);
+          }
+        });
+      }
+    });
+    
+    menuCache = prices;
+    lastFetch = now;
+  } catch (error) {
+    console.error("Error fetching menu for pricing", error);
+  }
+  
+  return prices;
+}
+
 async function processIntent(intentText, roomId) {
   if (!db) {
     console.error("Firebase not initialized. Cannot process intent.");
@@ -34,16 +87,32 @@ async function processIntent(intentText, roomId) {
       // Send Food & Liquor orders to the exact foodOrders path in the PMS
       const orderRef = db.ref(`foodOrders`).push();
       
+      const menuPrices = await fetchMenuPrices();
+      
       // The PMS expects `items` to be an object with qty, price, and type
       const formattedItems = {};
+      let subTotal = 0;
+      
       intent.items.forEach(item => {
         const capitalized = item.charAt(0).toUpperCase() + item.slice(1);
+        const searchName = item.toLowerCase();
+        
+        // Find price from CSV (fallback to 0 if not found in menu)
+        const itemPrice = menuPrices[searchName] || 0;
+        
         formattedItems[capitalized] = {
           qty: 1,
-          price: 0,
-          type: "food"
+          price: itemPrice,
+          type: "food" // Assuming voice orders default to food tax bracket for simplicity, or we could look up type.
         };
+        
+        subTotal += itemPrice;
       });
+      
+      const cgst = subTotal * 0.025; 
+      const sgst = subTotal * 0.025;
+      const flatTax = 0; // We assume food for voice orders.
+      const totalAmount = subTotal + cgst + sgst + flatTax;
 
       const payload = {
         room: roomId || "UNKNOWN",
@@ -51,10 +120,12 @@ async function processIntent(intentText, roomId) {
         orderClass: "Room",
         orderType: "food",
         items: formattedItems,
+        subTotal: subTotal,
+        cgst: cgst,
+        sgst: sgst,
+        flatTax: flatTax,
+        totalAmount: totalAmount,
         status: "new", // "new" triggers the PMS sound notification!
-        cgst: 0,
-        sgst: 0,
-        flatTax: 0,
         timestamp: admin.database.ServerValue.TIMESTAMP,
         source: "VoiceBot Aayla"
       };
