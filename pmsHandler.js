@@ -186,6 +186,48 @@ async function processIntent(intentText, roomId) {
       return `I have notified the housekeeping staff to ${intent.task}. They will be with you shortly.`;
     }
     
+    else if (intent.action === "get_revenue") {
+      const todayDate = new Date().toISOString().split('T')[0];
+      let totalRevenue = 0;
+      
+      // 1. Get Food Orders
+      const foodSnap = await db.ref("foodOrders").once("value");
+      const foodData = foodSnap.val() || {};
+      Object.values(foodData).forEach(f => {
+         let safeTime = f.timestamp;
+         if (typeof f.timestamp === 'number') safeTime = new Date(f.timestamp).toISOString();
+         if (String(safeTime || "").startsWith(todayDate)) {
+             const amount = f.totalAmount ? parseFloat(f.totalAmount) : 0;
+             const gst = (f.cgst ? parseFloat(f.cgst) : 0) + (f.sgst ? parseFloat(f.sgst) : 0);
+             totalRevenue += (amount + gst);
+         }
+      });
+      
+      // 2. Get Laundry Orders
+      const lndSnap = await db.ref("laundry").once("value");
+      const lndData = lndSnap.val() || {};
+      Object.values(lndData).forEach(l => {
+         if (String(l.timestamp || "").startsWith(todayDate)) {
+             const amount = l.totalAmount ? parseFloat(l.totalAmount) : 0;
+             totalRevenue += (amount + (amount * 0.18));
+         }
+      });
+      
+      // 3. Get Room Reservations
+      const resSnap = await db.ref("reservations").once("value");
+      const resData = resSnap.val() || {};
+      Object.values(resData).forEach(r => {
+         const dateStr = r.timestamp || (r.checkIn ? new Date(r.checkIn).toISOString() : "");
+         if (String(dateStr).startsWith(todayDate)) {
+             const tariff = r.totalRoomTariff ? parseFloat(r.totalRoomTariff) : 0;
+             const gst = r.gst ? parseFloat(r.gst) : 0;
+             totalRevenue += (tariff + gst);
+         }
+      });
+      
+      return `The total revenue recorded so far for today is ${Math.round(totalRevenue)} rupees.`;
+    }
+    
     else if (intent.action === "general_query") {
       return intent.response;
     }
