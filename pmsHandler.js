@@ -61,37 +61,54 @@ async function processIntent(intentText, roomId) {
       const details = intent.items.join(" and ");
       return `Your order for ${details} has been accepted and is currently being processed. It will be delivered to your room in approximately 15 minutes.`;
     } 
-    else if (intent.action === "housekeeping" || intent.action === "laundry") {
-      // The PMS reads from distinct top-level nodes for different departments
-      const nodeName = intent.action === "laundry" ? "laundry" : "housekeeping";
-      const requestRef = db.ref(nodeName).push();
+    else if (intent.action === "laundry") {
+      const requestRef = db.ref("laundry").push();
       
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('en-IN');
-      const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-      
-      // The PMS dashboard expects the task to be inside an `items` dictionary (just like food)
       const formattedItems = {};
-      // Capitalize the first letter of the task for better display
       const displayTask = intent.task.charAt(0).toUpperCase() + intent.task.slice(1);
-      formattedItems[displayTask] = 1;
+      
+      formattedItems[displayTask] = {
+        qty: 1,
+        price: 0
+      };
 
       const payload = {
         room: roomId || "UNKNOWN",
         guestName: "VoiceBot Guest",
         items: formattedItems,
-        notes: "",
+        totalPieces: 1,
+        totalAmount: 0,
+        notes: "Requested via Voice Assistant",
         priority: "Normal",
-        status: "new",
-        timestamp: new Date().toISOString(), // Match screenshot's ISO string format
+        status: "pending", // lowercase p for Laundry
+        timestamp: new Date().toISOString(),
         source: "VoiceBot Aayla"
       };
 
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out.")), 5000));
       await Promise.race([requestRef.set(payload), timeout]);
 
-      const team = intent.action === "laundry" ? "laundry team" : "housekeeping staff";
-      return `I have notified the ${team} to ${intent.task}. They will be with you shortly.`;
+      return `I have notified the laundry team to ${intent.task}. They will be with you shortly.`;
+    }
+    
+    else if (intent.action === "housekeeping") {
+      const requestRef = db.ref("roomRequests").push(); // React dashboard listens to 'roomRequests'
+      
+      const displayTask = intent.task.charAt(0).toUpperCase() + intent.task.slice(1);
+      
+      const payload = {
+        roomNumber: roomId || "UNKNOWN",
+        guestName: "VoiceBot Guest",
+        requestType: displayTask,
+        notes: "Requested via Voice Assistant",
+        status: "Pending", // uppercase P for RoomRequests
+        timestamp: new Date().toISOString()
+      };
+
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out.")), 5000));
+      await Promise.race([requestRef.set(payload), timeout]);
+
+      return `I have notified the housekeeping staff to ${intent.task}. They will be with you shortly.`;
     }
     
     else if (intent.action === "general_query") {
