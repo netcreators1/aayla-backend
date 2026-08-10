@@ -34,11 +34,15 @@ async function processIntent(intentText, roomId) {
       // Send Food & Liquor orders to the exact foodOrders path in the PMS
       const orderRef = db.ref(`foodOrders`).push();
       
-      // The PMS expects `items` to be a dictionary of item names to quantities, e.g. {"Coffee": 1}
+      // The PMS expects `items` to be an object with qty, price, and type
       const formattedItems = {};
       intent.items.forEach(item => {
         const capitalized = item.charAt(0).toUpperCase() + item.slice(1);
-        formattedItems[capitalized] = 1;
+        formattedItems[capitalized] = {
+          qty: 1,
+          price: 0,
+          type: "food"
+        };
       });
 
       const payload = {
