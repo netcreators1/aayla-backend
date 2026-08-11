@@ -68,6 +68,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const wavHeader = createWavHeader(pcmBuffer.length);
     const wavBuffer = Buffer.concat([wavHeader, pcmBuffer]);
     
+    // DEBUG: Save the audio to a file so we can listen to it!
+    fs.writeFileSync('debug_audio.wav', wavBuffer);
+    console.log('Saved audio to debug_audio.wav for testing!');
+    
     ws.send(JSON.stringify({ type: "trace", message: "Calling Groq Whisper (Speech-to-Text)..." }));
     
     // 2. Speech-to-Text (Groq Whisper-large-v3)
@@ -98,16 +102,17 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const prompt = `You are Aayla, a professional English-speaking hotel AI assistant.
     Extract the intent from the guest's request.
     CRITICAL RULES:
-    1. If the guest asks for ANY food, drinks, or beverages, output "order_food".
-    2. If the guest asks for room cleaning, fresh towels, amenities, or maintenance, output "housekeeping".
-    3. If the guest asks for laundry service, ironing, or washing clothes, output "laundry".
-    4. If the user (hotel manager) asks for today's revenue, sales, or earnings, output "get_revenue".
-    5. If the guest says "Thank you for watching", "subscribe", "Examples is asking for room service", or anything about YouTube, it means the microphone recorded silence. You MUST output general_query saying: "I couldn't hear you clearly. Please check your microphone wires and try speaking closer to the mic."
+    1. If the guest asks to turn ON or OFF a device like the AC, bedroom light, bed light, or TV, output "iot_control". (CRITICAL: Any request involving 'lights', 'AC', or 'turn on/off' is ALWAYS iot_control. NEVER classify these as food or housekeeping).
+    2. If the guest asks for ANY food, drinks, or beverages, output "order_food".
+    3. If the guest asks for room cleaning, fresh towels, amenities, or physical repairs, output "housekeeping".
+    4. If the guest asks for laundry service, ironing, or washing clothes, output "laundry".
+    5. If the user (hotel manager) asks for today's revenue, sales, or earnings, output "get_revenue".
     
     Respond with ONLY a JSON object in exactly one of these formats:
     - {"action": "order_food", "items": ["<noun1>", "<noun2>"]} (CRITICAL: Replace <noun> with the exact specific food/drink nouns the user asked for. NEVER use generic category names.)
     - {"action": "housekeeping", "task": "description of task"}
     - {"action": "laundry", "task": "description of laundry request"}
+    - {"action": "iot_control", "device": "bedroom_light", "state": "on|off"}
     - {"action": "get_revenue"}
     - {"action": "general_query", "response": "Your spoken answer to their general question as Aayla."}
     
