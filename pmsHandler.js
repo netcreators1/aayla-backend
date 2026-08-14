@@ -74,7 +74,29 @@ async function fetchMenuPrices() {
   return prices;
 }
 
-async function processIntent(intentText, roomId) {
+async function getGuestName(roomId) {
+  if (!db || !roomId || roomId === "UNKNOWN") return "Guest";
+  try {
+    const resSnap = await db.ref("reservations").once("value");
+    const resData = resSnap.val();
+    if (resData) {
+      // Find the reservation matching the roomId
+      const reservations = Object.values(resData);
+      // We assume the most recent reservation for this room is the active one
+      // or we can look for specific statuses like "checked_in" if they exist.
+      const activeRes = reservations.reverse().find(r => String(r.room) === String(roomId));
+      
+      if (activeRes && activeRes.guestName) {
+        return activeRes.guestName;
+      }
+    }
+  } catch (e) {
+    console.error("Failed to fetch guest name from Firebase:", e);
+  }
+  return "Guest";
+}
+
+async function processIntent(intentText, roomId, guestName = "VoiceBot Guest") {
   if (!db) {
     console.error("Firebase not initialized. Cannot process intent.");
     return "I'm sorry, I am not connected to the hotel system right now.";
@@ -116,7 +138,7 @@ async function processIntent(intentText, roomId) {
 
       const payload = {
         room: roomId || "UNKNOWN",
-        guestName: "VoiceBot Guest",
+        guestName: guestName,
         orderClass: "Room",
         orderType: "food",
         items: formattedItems,
@@ -134,7 +156,8 @@ async function processIntent(intentText, roomId) {
       await Promise.race([orderRef.set(payload), timeout]);
 
       const details = intent.items.join(" and ");
-      return `Your order for ${details} has been accepted and is currently being processed. It will be delivered to your room in approximately 15 minutes.`;
+      const greeting = guestName !== "Guest" && guestName !== "VoiceBot Guest" ? `Thank you, ${guestName}. ` : "";
+      return `${greeting}Your order for ${details} has been accepted and is currently being processed. It will be delivered to your room in approximately 15 minutes.`;
     } 
     else if (intent.action === "laundry") {
       const requestRef = db.ref("laundry").push();
@@ -149,7 +172,7 @@ async function processIntent(intentText, roomId) {
 
       const payload = {
         room: roomId || "UNKNOWN",
-        guestName: "VoiceBot Guest",
+        guestName: guestName,
         items: formattedItems,
         totalPieces: 1,
         totalAmount: 0,
@@ -163,7 +186,8 @@ async function processIntent(intentText, roomId) {
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out.")), 5000));
       await Promise.race([requestRef.set(payload), timeout]);
 
-      return `I have notified the laundry team to ${intent.task}. They will be with you shortly.`;
+      const greeting = guestName !== "Guest" && guestName !== "VoiceBot Guest" ? `Certainly, ${guestName}. ` : "";
+      return `${greeting}I have notified the laundry team to ${intent.task}. They will be with you shortly.`;
     }
     
     else if (intent.action === "housekeeping") {
@@ -173,7 +197,7 @@ async function processIntent(intentText, roomId) {
       
       const payload = {
         roomNumber: roomId || "UNKNOWN",
-        guestName: "VoiceBot Guest",
+        guestName: guestName,
         requestType: displayTask,
         notes: "Requested via Voice Assistant",
         status: "Pending", // uppercase P for RoomRequests
@@ -183,7 +207,8 @@ async function processIntent(intentText, roomId) {
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out.")), 5000));
       await Promise.race([requestRef.set(payload), timeout]);
 
-      return `I have notified the housekeeping staff to ${intent.task}. They will be with you shortly.`;
+      const greeting = guestName !== "Guest" && guestName !== "VoiceBot Guest" ? `Certainly, ${guestName}. ` : "";
+      return `${greeting}I have notified the housekeeping staff to ${intent.task}. They will be with you shortly.`;
     }
     
     else if (intent.action === "get_revenue") {
@@ -228,6 +253,28 @@ async function processIntent(intentText, roomId) {
       return `The total revenue recorded so far for today is ${Math.round(totalRevenue)} rupees.`;
     }
     
+    else if (intent.action === "iot_control") {
+      const dev = (intent.device || "").toLowerCase();
+      const st = (intent.state || "on").toLowerCase();
+      
+      if (dev.includes("ac") || dev.includes("air")) {
+          // Legacy support: push to iot_commands for AC
+          await db.ref("iot_commands").push({
+             room: roomId || "UNKNOWN",
+             type: "AC",
+             action: st,
+             timestamp: new Date().toISOString()
+          });
+      } else {
+          // New architecture: sync to iot_state
+          const safeDevice = dev.replace(/[^a-zA-Z0-9_]/g, '_');
+          await db.ref(`iot_state/${roomId || "UNKNOWN"}/${safeDevice}`).set(st);
+      }
+      
+      const greeting = guestName !== "Guest" && guestName !== "VoiceBot Guest" ? `Okay, ${guestName}, ` : "Okay, ";
+      return `${greeting}I have turned ${st} the ${dev.replace('_', ' ')}.`;
+    }
+
     else if (intent.action === "general_query") {
       return intent.response;
     }
@@ -240,4 +287,4 @@ async function processIntent(intentText, roomId) {
   }
 }
 
-module.exports = { processIntent };
+module.exports = { processIntent, getGuestName };
