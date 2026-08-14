@@ -4,7 +4,7 @@ const { WebSocketServer } = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { processIntent } = require('./pmsHandler');
+const { processIntent, getGuestName } = require('./pmsHandler');
 
 const app = express();
 const server = http.createServer(app);
@@ -98,8 +98,12 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     ws.send(JSON.stringify({ type: 'trace', message: 'Calling Groq Llama-3 for Intent...' }));
 
+    const guestName = await getGuestName(roomId);
+    ws.send(JSON.stringify({ type: 'trace', message: `Fetched Guest Name: ${guestName} for Room: ${roomId}` }));
+
     // 3. LLM Intent Parsing (Groq Llama-3)
     const prompt = `You are Aayla, a professional English-speaking hotel AI assistant.
+    You are speaking with the guest: ${guestName} in room ${roomId}. If you know their name, address them naturally by name in your responses.
     Extract the intent from the guest's request.
     CRITICAL RULES:
     1. If the guest asks to turn ON or OFF a device like the AC, bedroom light, bed light, or TV, output "iot_control". (CRITICAL: Any request involving 'lights', 'AC', or 'turn on/off' is ALWAYS iot_control. NEVER classify these as food or housekeeping).
@@ -144,7 +148,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     // 4. Update PMS (Firebase) and get response text
     ws.send(JSON.stringify({ type: "trace", message: "Updating Firebase..." }));
-    const responseText = await processIntent(intentJSON, roomId);
+    const responseText = await processIntent(intentJSON, roomId, guestName);
     ws.send(JSON.stringify({ type: "trace", message: `Firebase Updated! Response: ${responseText}` }));
 
     // 5. Text-to-Speech (Deepgram - Free Tier, returns raw PCM)
