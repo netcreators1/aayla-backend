@@ -107,7 +107,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     3. If the guest asks for room cleaning, fresh towels, amenities, or physical repairs, output "housekeeping".
     4. If the guest asks for laundry service, ironing, or washing clothes, output "laundry".
     5. If the user (hotel manager) asks for today's revenue, sales, or earnings, output "get_revenue".
-    6. If the guest says "Thank you for watching", "subscribe", "Examples is asking for room service", or anything about YouTube, it means the microphone recorded silence. You MUST output general_query saying: "I couldn't hear you clearly. Please check your microphone wires and try speaking closer to the mic."
+    6. HALLUCINATION CHECK: If the guest's request contains EXACTLY "Thank you for watching", "subscribe", or talks about YouTube, you MUST output general_query with response: "I couldn't hear you clearly. Please check your microphone wires and try speaking closer to the mic." 
+    7. For any other request, output "general_query" and answer their question naturally as Aayla.
     
     Respond with ONLY a JSON object in exactly one of these formats:
     - {"action": "order_food", "items": ["<noun1>", "<noun2>"]} (CRITICAL: Replace <noun> with the exact specific food/drink nouns the user asked for. NEVER use generic category names.)
