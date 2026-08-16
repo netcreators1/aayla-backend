@@ -173,10 +173,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     
-    // SOFTWARE VOLUME BOOSTER (Increase Volume 2x)
+    // SOFTWARE VOLUME BOOSTER (Increase Volume 1.25x)
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
-      sample = Math.floor(sample * 2); // 2x Volume Multiplier
+      sample = Math.floor(sample * 1.25); // 1.25x Volume Multiplier (Safe bump without hard clipping)
       
       // Clamp to prevent audio distortion/clipping
       if (sample > 32767) sample = 32767;
