@@ -172,6 +172,18 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
+    
+    // SOFTWARE VOLUME BOOSTER (Increase Volume 2x)
+    for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
+      let sample = pcmResponseData.readInt16LE(i);
+      sample = Math.floor(sample * 2); // 2x Volume Multiplier
+      
+      // Clamp to prevent audio distortion/clipping
+      if (sample > 32767) sample = 32767;
+      if (sample < -32768) sample = -32768;
+      
+      pcmResponseData.writeInt16LE(sample, i);
+    }
   
     ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
     
