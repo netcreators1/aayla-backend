@@ -172,28 +172,16 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
-    
-    // SOFTWARE VOLUME BOOSTER (Increase Volume 2x)
-    for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
-      let sample = pcmResponseData.readInt16LE(i);
-      sample = Math.floor(sample * 2); // 2x Volume Multiplier
-      
-      // Clamp to prevent audio distortion/clipping
-      if (sample > 32767) sample = 32767;
-      if (sample < -32768) sample = -32768;
-      
-      pcmResponseData.writeInt16LE(sample, i);
-    }
-
+  
     ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
     
     // Chunk the audio data so we don't crash the ESP32's tiny RAM!
-    const chunkSize = 512; // Extremely small chunks to prevent ESP32 truncation
-    const delay = ms => new Promise(res => setTimeout(res, ms));
+    // Using 4096 byte chunks (approx 85ms of audio at 24kHz)
+    const chunkSize = 4096;
     
     for (let i = 0; i < pcmResponseData.length; i += chunkSize) {
       ws.send(pcmResponseData.slice(i, i + chunkSize));
-      await delay(10); // Throttle the stream so we don't overflow the ESP32's network buffer!
+      // We let the TCP window handle backpressure naturally instead of artificially delaying!
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
