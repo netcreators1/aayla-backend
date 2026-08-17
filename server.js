@@ -131,7 +131,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "mixtral-8x7b-32768",
+        model: process.env.GROQ_MODEL || "gemma2-9b-it",
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" }
       })
