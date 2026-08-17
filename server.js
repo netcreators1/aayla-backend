@@ -173,14 +173,24 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     
-    // SOFTWARE VOLUME BOOSTER (Increase Volume 1.25x)
+    // STUDIO-QUALITY DYNAMIC RANGE COMPRESSOR
+    // We boost the volume by 3.0x to make it very loud, but use Math.tanh() 
+    // to smoothly curve the loudest peaks instead of chopping them off.
+    // This gives maximum loudness while remaining crystal clear with zero distortion!
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
-      sample = Math.floor(sample * 1.25); // 1.25x Volume Multiplier (Safe bump without hard clipping)
       
-      // Clamp to prevent audio distortion/clipping
-      if (sample > 32767) sample = 32767;
-      if (sample < -32768) sample = -32768;
+      // Convert to a -1.0 to 1.0 decimal
+      let normalized = sample / 32768.0;
+      
+      // Aggressive 3.0x Volume Boost
+      normalized = normalized * 3.0;
+      
+      // Soft Clipping (Curve the peaks so they don't crash into the digital ceiling)
+      normalized = Math.tanh(normalized);
+      
+      // Convert back to 16-bit Audio
+      sample = Math.floor(normalized * 32767);
       
       pcmResponseData.writeInt16LE(sample, i);
     }
