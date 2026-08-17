@@ -173,6 +173,12 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     
+    let maxBefore = 0;
+    for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
+      let sample = Math.abs(pcmResponseData.readInt16LE(i));
+      if (sample > maxBefore) maxBefore = sample;
+    }
+
     // MASSIVE 4.0x HARD-CLIP BOOSTER
     // Deepgram's audio is extremely quiet on average, but has tiny microscopic "spikes" that trick peak normalizers.
     // By multiplying by 4.0x and hard-clipping the peaks, we leave 95% of the voice mathematically perfect (crystal clear),
@@ -189,6 +195,13 @@ async function processAudio(pcmBuffer, ws, roomId) {
       
       pcmResponseData.writeInt16LE(sample, i);
     }
+    
+    let maxAfter = 0;
+    for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
+      let sample = Math.abs(pcmResponseData.readInt16LE(i));
+      if (sample > maxAfter) maxAfter = sample;
+    }
+    ws.send(JSON.stringify({ type: 'trace', message: `AUDIO DIAGNOSTIC: Max Amplitude Before=${maxBefore} -> After=${maxAfter}` }));
     
     // CONVERT MONO TO STEREO:
     // The MAX98357A amplifier physically mixes Left and Right: (L + R) / 2.
