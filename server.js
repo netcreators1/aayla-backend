@@ -173,9 +173,32 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     
-    // We send the absolute mathematically pristine audio bytes from Deepgram.
-    // Any digital volume boosting here introduces harmonic distortion. 
-    // To make it louder, we MUST use the physical hardware GAIN pin on the amplifier!
+    // PEAK NORMALIZATION: 
+    // Step 1: Scan the entire audio file to find the single loudest spike
+    let maxPeak = 0;
+    for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
+      const sample = Math.abs(pcmResponseData.readInt16LE(i));
+      if (sample > maxPeak) maxPeak = sample;
+    }
+
+    // Step 2: Calculate the PERFECT volume multiplier that brings the loudest spike 
+    // exactly to the digital ceiling (32767) without ever crossing it.
+    if (maxPeak > 0) {
+      // We use 32000 instead of 32767 to leave a tiny fraction of "headroom" for maximum clarity
+      const optimalMultiplier = 32000.0 / maxPeak;
+      
+      // Step 3: Multiply every sample by this perfect ratio
+      for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
+        let sample = pcmResponseData.readInt16LE(i);
+        sample = Math.floor(sample * optimalMultiplier);
+        
+        // Final safety clamp just in case of rounding errors
+        if (sample > 32767) sample = 32767;
+        if (sample < -32768) sample = -32768;
+        
+        pcmResponseData.writeInt16LE(sample, i);
+      }
+    }
   
     ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
     
