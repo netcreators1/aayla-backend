@@ -208,15 +208,26 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
     ws.send(JSON.stringify({ type: 'trace', message: `AUDIO DIAGNOSTIC: Max Amplitude Before=${maxBefore} -> After=${maxAfter}` }));
     
-    ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
+    // CONVERT MONO TO STEREO:
+    // We must do this on the server because doing it on the ESP32 breaks when Wi-Fi fragments the packets!
+    const stereoBuffer = Buffer.alloc(pcmResponseData.length * 2);
+    for (let i = 0; i < pcmResponseData.length; i += 2) {
+      const sample = pcmResponseData.readInt16LE(i);
+      stereoBuffer.writeInt16LE(sample, i * 2);     // Left Channel
+      stereoBuffer.writeInt16LE(sample, i * 2 + 2); // Right Channel
+    }
+  
+    ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
     
-    // We send 1024 bytes per chunk (21.3ms of audio for mono at 24000Hz).
-    const chunkSize = 1024; 
+    // We send 2048 bytes of STEREO per chunk (21.3ms of audio at 24000Hz).
+    const chunkSize = 2048; 
     const delay = ms => new Promise(res => setTimeout(res, ms));
     
-    for (let i = 0; i < pcmResponseData.length; i += chunkSize) {
-      ws.send(pcmResponseData.slice(i, i + chunkSize));
-      await delay(10); // Wait 10ms to ensure we send audio FASTER than the 21.3ms it takes to play!
+    for (let i = 0; i < stereoBuffer.length; i += chunkSize) {
+      ws.send(stereoBuffer.slice(i, i + chunkSize));
+      // Node.js setTimeout(10) actually takes ~12-15ms. 
+      // This sends the 21.3ms chunk faster than real-time, preventing the ESP32 from starving!
+      await delay(10); 
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
