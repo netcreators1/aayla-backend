@@ -154,7 +154,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     // 5. Text-to-Speech (Deepgram - Free Tier, returns raw PCM)
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
     
-    // Deepgram Aura Asteria (Female voice)
+    /*
     const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=24000', {
       method: 'POST',
       headers: {
@@ -172,6 +172,20 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
+    */
+
+    // SERVER-SIDE SINE WAVE DIAGNOSTIC
+    // We synthesize a 3-second, 440Hz beep exactly like the hardware test, but we STREAM IT over the network!
+    ws.send(JSON.stringify({ type: 'trace', message: 'Generating Server-Side Diagnostic Sine Wave...' }));
+    const durationSeconds = 3;
+    const totalSamples = 24000 * durationSeconds;
+    let pcmResponseData = Buffer.alloc(totalSamples * 2); // 16-bit mono
+    
+    for (let i = 0; i < totalSamples; i++) {
+      // 8000 amplitude, 440Hz, 24000 sample rate
+      const sample = Math.floor(8000 * Math.sin(2.0 * Math.PI * 440.0 * i / 24000.0));
+      pcmResponseData.writeInt16LE(sample, i * 2);
+    }
     
     let maxBefore = 0;
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
