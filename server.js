@@ -179,23 +179,16 @@ async function processAudio(pcmBuffer, ws, roomId) {
       if (sample > maxBefore) maxBefore = sample;
     }
 
-    // TRUE PEAK NORMALIZATION
-    // Previously we used a static 4.0x multiplier which caused heavy clipping/distortion.
-    // Now we calculate the exact perfect multiplier to reach maximum volume without ANY clipping.
-    let optimalMultiplier = 1.0;
-    if (maxBefore > 0) {
-      optimalMultiplier = 32000.0 / maxBefore; 
-    }
-
+    // 3.3V POWER LIMITER:
+    // We previously tried to maximize the volume using a True Peak Normalizer.
+    // However, since the amplifier is running on the weak 3.3V pin, maximizing the volume causes the amplifier 
+    // to pull too much electricity, crashing the power supply and turning the audio into static garbage!
+    // We will leave the audio perfectly un-touched (multiplier = 1.0) so it plays clearly without crashing the power.
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
       
-      // Multiply volume by the perfect, distortion-free ratio
-      sample = Math.floor(sample * optimalMultiplier);
-      
-      // Final safety clamp just in case of float rounding errors
-      if (sample > 32767) sample = 32767;
-      if (sample < -32768) sample = -32768;
+      // Leave volume completely untouched
+      // sample = sample;
       
       pcmResponseData.writeInt16LE(sample, i);
     }
