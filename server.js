@@ -179,17 +179,21 @@ async function processAudio(pcmBuffer, ws, roomId) {
       if (sample > maxBefore) maxBefore = sample;
     }
 
-    // MASSIVE 4.0x HARD-CLIP BOOSTER
-    // Deepgram's audio is extremely quiet on average, but has tiny microscopic "spikes" that trick peak normalizers.
-    // By multiplying by 4.0x and hard-clipping the peaks, we leave 95% of the voice mathematically perfect (crystal clear),
-    // while forcing the overall loudness to quadruple!
+    // TRUE PEAK NORMALIZATION
+    // Previously we used a static 4.0x multiplier which caused heavy clipping/distortion.
+    // Now we calculate the exact perfect multiplier to reach maximum volume without ANY clipping.
+    let optimalMultiplier = 1.0;
+    if (maxBefore > 0) {
+      optimalMultiplier = 32000.0 / maxBefore; 
+    }
+
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
       
-      // Multiply volume by 400%
-      sample = Math.floor(sample * 4.0);
+      // Multiply volume by the perfect, distortion-free ratio
+      sample = Math.floor(sample * optimalMultiplier);
       
-      // Strict Hard Clipping at the digital ceiling
+      // Final safety clamp just in case of float rounding errors
       if (sample > 32767) sample = 32767;
       if (sample < -32768) sample = -32768;
       
