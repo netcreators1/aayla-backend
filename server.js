@@ -154,38 +154,22 @@ async function processAudio(pcmBuffer, ws, roomId) {
     // 5. Text-to-Speech (Deepgram - Free Tier, returns raw PCM)
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
     
-    /*
+    // Deepgram Aura Asteria (Female voice)
     const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=24000', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        text: responseText
-      })
+      body: JSON.stringify({ text: responseText })
     });
 
     if (!ttsResponse.ok) {
-      const errText = await ttsResponse.text();
-      throw new Error(`Deepgram TTS Failed: ${ttsResponse.status} - ${errText}`);
+      console.error("Deepgram TTS Error:", await ttsResponse.text());
+      return;
     }
 
-    const pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
-    */
-
-    // SERVER-SIDE SINE WAVE DIAGNOSTIC
-    // We synthesize a 3-second, 440Hz beep exactly like the hardware test, but we STREAM IT over the network!
-    ws.send(JSON.stringify({ type: 'trace', message: 'Generating Server-Side Diagnostic Sine Wave...' }));
-    const durationSeconds = 3;
-    const totalSamples = 24000 * durationSeconds;
-    let pcmResponseData = Buffer.alloc(totalSamples * 2); // 16-bit mono
-    
-    for (let i = 0; i < totalSamples; i++) {
-      // 8000 amplitude, 440Hz, 24000 sample rate
-      const sample = Math.floor(8000 * Math.sin(2.0 * Math.PI * 440.0 * i / 24000.0));
-      pcmResponseData.writeInt16LE(sample, i * 2);
-    }
+    let pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     
     let maxBefore = 0;
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
@@ -234,14 +218,14 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
     
-    // We send 1024 bytes of STEREO per chunk (10.666ms of audio at 24000Hz).
-    const chunkSize = 1024; 
-    const chunkDurationMs = (chunkSize / 4) / 24000 * 1000; // 10.666ms
+    // We send 4096 bytes of STEREO per chunk (42.666ms of audio at 24000Hz).
+    // Using larger chunks drastically reduces the number of TCP packets, saving massive CPU time on the ESP32!
+    const chunkSize = 4096; 
+    const chunkDurationMs = (chunkSize / 4) / 24000 * 1000; // 42.666ms
     
-    // PRE-FILL: Send the first 16 chunks (16KB) instantly!
-    // This perfectly fills the ESP32's internal 32KB DMA buffer to exactly 50%.
-    // By pre-filling the buffer, we can absorb over 170ms of Wi-Fi network jitter without ANY stuttering!
-    const prefillChunks = 16;
+    // PRE-FILL: Send the first 8 chunks (32KB) instantly!
+    // This perfectly fills the ESP32's internal 32KB DMA buffer to exactly 100%.
+    const prefillChunks = 8;
     let i = 0;
     for (; i < stereoBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
       ws.send(stereoBuffer.slice(i, i + chunkSize));
