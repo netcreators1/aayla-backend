@@ -218,33 +218,14 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
     
-    // We send 4096 bytes of STEREO per chunk (64ms of audio at 16000Hz).
-    // Using larger chunks drastically reduces the number of TCP packets, saving massive CPU time on the ESP32!
-    const chunkSize = 4096; 
-    const chunkDurationMs = (chunkSize / 4) / 16000 * 1000; // 64ms
+    // We send 1024 bytes of STEREO per chunk (16ms of audio at 16000Hz).
+    const chunkSize = 1024; 
+    const delay = ms => new Promise(res => setTimeout(res, ms));
     
-    // PRE-FILL: Send the first 8 chunks (32KB) instantly!
-    // This perfectly fills the ESP32's internal 32KB DMA buffer to exactly 100%.
-    const prefillChunks = 8;
-    let i = 0;
-    for (; i < stereoBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
+    for (let i = 0; i < stereoBuffer.length; i += chunkSize) {
       ws.send(stereoBuffer.slice(i, i + chunkSize));
-    }
-    
-    // PACED STREAMING: Send the rest using a mathematically perfect zero-drift timer.
-    // This keeps the ESP32 DMA buffer locked exactly at 50%, preventing it from ever overflowing (blocking) or underruning (stuttering).
-    const startTime = Date.now();
-    let pacedChunkIndex = 0;
-    
-    for (; i < stereoBuffer.length; i += chunkSize) {
-      ws.send(stereoBuffer.slice(i, i + chunkSize));
-      pacedChunkIndex++;
-      
-      const expectedTime = startTime + (pacedChunkIndex * chunkDurationMs);
-      const waitTime = expectedTime - Date.now();
-      if (waitTime > 0) {
-        await new Promise(res => setTimeout(res, waitTime));
-      }
+      // Linux has 1ms timer precision. delay(10) sends the 16ms chunk safely without bursting the Wi-Fi!
+      await delay(10); 
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
