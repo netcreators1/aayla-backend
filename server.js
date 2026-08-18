@@ -207,27 +207,15 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
     ws.send(JSON.stringify({ type: 'trace', message: `AUDIO DIAGNOSTIC: Max Amplitude Before=${maxBefore} -> After=${maxAfter}` }));
     
-    // CONVERT MONO TO STEREO:
-    // The MAX98357A amplifier physically mixes Left and Right: (L + R) / 2.
-    // If we send Mono, R is 0, so the hardware cuts the physical volume in half!
-    // By duplicating the sample into both channels (L=audio, R=audio), it outputs 100% full volume!
-    const stereoBuffer = Buffer.alloc(pcmResponseData.length * 2);
-    for (let i = 0; i < pcmResponseData.length; i += 2) {
-      const sample = pcmResponseData.readInt16LE(i);
-      stereoBuffer.writeInt16LE(sample, i * 2);     // Left Channel
-      stereoBuffer.writeInt16LE(sample, i * 2 + 2); // Right Channel
-    }
-  
-    ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
+    // We stream the raw Mono PCM directly to the ESP32.
+    ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
     
-    // We send 2048 bytes of Stereo audio per chunk.
-    // At 24000Hz, 2048 bytes (512 frames) = 21.3 milliseconds of audio.
-    // We wait 20ms between sends to stream just slightly faster than real-time, preventing the ESP32 from crashing under the network load!
-    const chunkSize = 2048; 
+    // We send 1024 bytes per chunk (21.3ms of audio for mono at 24000Hz).
+    const chunkSize = 1024; 
     const delay = ms => new Promise(res => setTimeout(res, ms));
     
-    for (let i = 0; i < stereoBuffer.length; i += chunkSize) {
-      ws.send(stereoBuffer.slice(i, i + chunkSize));
+    for (let i = 0; i < pcmResponseData.length; i += chunkSize) {
+      ws.send(pcmResponseData.slice(i, i + chunkSize));
       await delay(20);
     }
     
