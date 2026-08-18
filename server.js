@@ -179,16 +179,23 @@ async function processAudio(pcmBuffer, ws, roomId) {
       if (sample > maxBefore) maxBefore = sample;
     }
 
-    // USB POWER STARVATION TEST:
-    // A standard laptop USB port can only provide 500mA of power.
-    // The ESP32 Wi-Fi uses 400mA, and the Amplifier uses 600mA (Total: 1000mA).
-    // When playing long sentences, the laptop USB port physically cannot provide enough electricity, causing the voltage to drop and creating severe distortion.
-    // We are artificially cutting the volume in HALF (0.5x) to drastically reduce the amplifier's power draw.
+    // TRUE PEAK NORMALIZATION:
+    // Now that the ESP32 is powered by a Wall Charger (2000mA), we have plenty of power!
+    // We can safely maximize the volume without crashing the system.
+    let optimalMultiplier = 1.0;
+    if (maxBefore > 0) {
+      optimalMultiplier = 32000.0 / maxBefore; 
+    }
+
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
       
-      // Cut volume in half to save power
-      sample = Math.floor(sample * 0.5);
+      // Boost volume to absolute maximum without clipping
+      sample = Math.floor(sample * optimalMultiplier);
+      
+      // Final safety clamp
+      if (sample > 32767) sample = 32767;
+      if (sample < -32768) sample = -32768;
       
       pcmResponseData.writeInt16LE(sample, i);
     }
