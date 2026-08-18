@@ -226,9 +226,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     for (let i = 0; i < stereoBuffer.length; i += chunkSize) {
       ws.send(stereoBuffer.slice(i, i + chunkSize));
-      // Node.js setTimeout(5) actually takes ~6-9ms. 
-      // This guarantees we send the 10.6ms chunk faster than real-time, preventing the ESP32 from starving/stuttering!
-      await delay(5); 
+      // Linux has 1ms timer precision. delay(10) sends the 10.6ms chunk at EXACTLY the right speed!
+      await delay(10); 
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
