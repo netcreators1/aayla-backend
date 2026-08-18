@@ -155,7 +155,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
     
     // Deepgram Aura Asteria (Female voice)
-    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=24000', {
+    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=16000', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -218,10 +218,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
     
-    // We send 4096 bytes of STEREO per chunk (42.666ms of audio at 24000Hz).
+    // We send 4096 bytes of STEREO per chunk (64ms of audio at 16000Hz).
     // Using larger chunks drastically reduces the number of TCP packets, saving massive CPU time on the ESP32!
     const chunkSize = 4096; 
-    const chunkDurationMs = (chunkSize / 4) / 24000 * 1000; // 42.666ms
+    const chunkDurationMs = (chunkSize / 4) / 16000 * 1000; // 64ms
     
     // PRE-FILL: Send the first 8 chunks (32KB) instantly!
     // This perfectly fills the ESP32's internal 32KB DMA buffer to exactly 100%.
