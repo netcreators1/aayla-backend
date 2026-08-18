@@ -179,16 +179,16 @@ async function processAudio(pcmBuffer, ws, roomId) {
       if (sample > maxBefore) maxBefore = sample;
     }
 
-    // 3.3V POWER LIMITER:
-    // We previously tried to maximize the volume using a True Peak Normalizer.
-    // However, since the amplifier is running on the weak 3.3V pin, maximizing the volume causes the amplifier 
-    // to pull too much electricity, crashing the power supply and turning the audio into static garbage!
-    // We will leave the audio perfectly un-touched (multiplier = 1.0) so it plays clearly without crashing the power.
+    // USB POWER STARVATION TEST:
+    // A standard laptop USB port can only provide 500mA of power.
+    // The ESP32 Wi-Fi uses 400mA, and the Amplifier uses 600mA (Total: 1000mA).
+    // When playing long sentences, the laptop USB port physically cannot provide enough electricity, causing the voltage to drop and creating severe distortion.
+    // We are artificially cutting the volume in HALF (0.5x) to drastically reduce the amplifier's power draw.
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
       
-      // Leave volume completely untouched
-      // sample = sample;
+      // Cut volume in half to save power
+      sample = Math.floor(sample * 0.5);
       
       pcmResponseData.writeInt16LE(sample, i);
     }
