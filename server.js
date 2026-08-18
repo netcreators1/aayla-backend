@@ -219,15 +219,16 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
     
-    // We send 2048 bytes of STEREO per chunk (21.3ms of audio at 24000Hz).
-    const chunkSize = 2048; 
+    // We send 1024 bytes of STEREO per chunk (10.6ms of audio at 24000Hz).
+    // We must keep the chunk size at 1024 to prevent WebSocket payload limits on the ESP32.
+    const chunkSize = 1024; 
     const delay = ms => new Promise(res => setTimeout(res, ms));
     
     for (let i = 0; i < stereoBuffer.length; i += chunkSize) {
       ws.send(stereoBuffer.slice(i, i + chunkSize));
-      // Node.js setTimeout(10) actually takes ~12-15ms. 
-      // This sends the 21.3ms chunk faster than real-time, preventing the ESP32 from starving!
-      await delay(10); 
+      // Node.js setTimeout(5) actually takes ~6-9ms. 
+      // This guarantees we send the 10.6ms chunk faster than real-time, preventing the ESP32 from starving/stuttering!
+      await delay(5); 
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
