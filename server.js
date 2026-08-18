@@ -220,12 +220,30 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     // We send 1024 bytes of STEREO per chunk (16ms of audio at 16000Hz).
     const chunkSize = 1024; 
-    const delay = ms => new Promise(res => setTimeout(res, ms));
+    const chunkDurationMs = (chunkSize / 4) / 16000 * 1000; // 16.0ms
     
-    for (let i = 0; i < stereoBuffer.length; i += chunkSize) {
+    // PRE-FILL: Send the first 32 chunks (32KB) instantly!
+    // This perfectly fills the ESP32's massive FreeRTOS Ring Buffer to exactly 50%.
+    const prefillChunks = 32;
+    let i = 0;
+    for (; i < stereoBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
       ws.send(stereoBuffer.slice(i, i + chunkSize));
-      // Linux has 1ms timer precision. delay(10) sends the 16ms chunk safely without bursting the Wi-Fi!
-      await delay(10); 
+    }
+    
+    // PACED STREAMING: Mathematically perfect average speed!
+    // The ESP32 FreeRTOS Ring Buffer absorbs any tiny network bursts perfectly!
+    const startTime = Date.now();
+    let pacedChunkIndex = 0;
+    
+    for (; i < stereoBuffer.length; i += chunkSize) {
+      ws.send(stereoBuffer.slice(i, i + chunkSize));
+      pacedChunkIndex++;
+      
+      const expectedTime = startTime + (pacedChunkIndex * chunkDurationMs);
+      const waitTime = expectedTime - Date.now();
+      if (waitTime > 0) {
+        await new Promise(res => setTimeout(res, waitTime));
+      }
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
