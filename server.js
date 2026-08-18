@@ -216,7 +216,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     for (let i = 0; i < pcmResponseData.length; i += chunkSize) {
       ws.send(pcmResponseData.slice(i, i + chunkSize));
-      await delay(20); // Wait 20ms to pace the 21.3ms mono chunk perfectly
+      await delay(10); // Wait 10ms to ensure we send audio FASTER than the 21.3ms it takes to play!
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
