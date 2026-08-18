@@ -207,16 +207,27 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
     ws.send(JSON.stringify({ type: 'trace', message: `AUDIO DIAGNOSTIC: Max Amplitude Before=${maxBefore} -> After=${maxAfter}` }));
     
-    // We stream the raw Mono PCM directly to the ESP32.
-    ws.send(JSON.stringify({ type: 'audio_start', size: pcmResponseData.length }));
+    // CONVERT MONO TO STEREO:
+    // The MAX98357A expects a Stereo I2S clock signal. If we send Mono, it hums or halves the volume.
+    // By duplicating the sample into both channels (L=audio, R=audio), it outputs 100% full volume!
+    const stereoBuffer = Buffer.alloc(pcmResponseData.length * 2);
+    for (let i = 0; i < pcmResponseData.length; i += 2) {
+      const sample = pcmResponseData.readInt16LE(i);
+      stereoBuffer.writeInt16LE(sample, i * 2);     // Left Channel
+      stereoBuffer.writeInt16LE(sample, i * 2 + 2); // Right Channel
+    }
+  
+    ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
     
-    // We send 1024 bytes per chunk (21.3ms of audio for mono at 24000Hz).
+    // We MUST keep the chunk size at 1024 bytes. 
+    // Sending larger chunks (like 2048) overflows the ESP32 WebSocket buffer and causes garbage noise!
+    // At 24000Hz, 1024 bytes of stereo (256 frames) = 10.6 milliseconds of audio.
     const chunkSize = 1024; 
     const delay = ms => new Promise(res => setTimeout(res, ms));
     
-    for (let i = 0; i < pcmResponseData.length; i += chunkSize) {
-      ws.send(pcmResponseData.slice(i, i + chunkSize));
-      await delay(20);
+    for (let i = 0; i < stereoBuffer.length; i += chunkSize) {
+      ws.send(stereoBuffer.slice(i, i + chunkSize));
+      await delay(10); // Wait 10ms to pace the 10.6ms audio chunk perfectly
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
