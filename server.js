@@ -179,18 +179,19 @@ async function processAudio(pcmBuffer, ws, roomId) {
       if (sample > maxBefore) maxBefore = sample;
     }
 
-    // TRUE PEAK NORMALIZATION:
-    // Now that the ESP32 is powered by a Wall Charger (2000mA), we have plenty of power!
-    // We can safely maximize the volume without crashing the system.
+    // BREADBOARD SAFE VOLUME LIMITER:
+    // When we pushed the volume to 32000, she completely vanished because the amplifier pulled a massive power spike 
+    // that the tiny breadboard jumper wires couldn't handle, causing the amplifier to instantly shut down!
+    // We will target a safe "Sweet Spot" of 16000. It is twice as loud as earlier, but won't crash the hardware!
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 32000.0 / maxBefore; 
+      optimalMultiplier = 16000.0 / maxBefore; 
     }
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
       
-      // Boost volume to absolute maximum without clipping
+      // Boost volume to the safe 16000 sweet spot
       sample = Math.floor(sample * optimalMultiplier);
       
       // Final safety clamp
