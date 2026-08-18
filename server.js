@@ -220,13 +220,15 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
     
-    // We can confidently use a larger chunk size since it's perfectly real-time
+    // We send 2048 bytes of Stereo audio per chunk.
+    // At 24000Hz, 2048 bytes (512 frames) = 21.3 milliseconds of audio.
+    // We wait 20ms between sends to stream just slightly faster than real-time, preventing the ESP32 from crashing under the network load!
     const chunkSize = 2048; 
     const delay = ms => new Promise(res => setTimeout(res, ms));
     
     for (let i = 0; i < stereoBuffer.length; i += chunkSize) {
       ws.send(stereoBuffer.slice(i, i + chunkSize));
-      await delay(10);
+      await delay(20);
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
