@@ -188,13 +188,13 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // Because your MAX98357A's GAIN pin is floating, it applies 9dB of analog gain (2.8x multiplier) to the signal.
-    // If we send a digital signal at 16000 amplitude, the 2.8x analog multiplier pushes the speaker voltage to 7.0V!
-    // Since the Power Bank only provides 5.0V, the amplifier physically chops the top off the audio waves (Clipping Distortion)!
-    // In our hardware test, we used exactly 8000 amplitude, which peaked at 3.5V and sounded flawlessly smooth.
+    // If the volume is too loud, the MAX98357A draws massive current spikes from the breadboard.
+    // If the unshielded jumper wires have high resistance, this current spike causes the 3.3V logic lines 
+    // to sag (Voltage Droop), causing the amplifier to randomly miss I2S BCLK clock cycles!
+    // We lower the amplitude to 2000. It will be quiet, but if the distortion stops, we have proven it's a power sag issue!
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 8000.0 / maxBefore; 
+      optimalMultiplier = 2000.0 / maxBefore; 
     }
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
