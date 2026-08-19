@@ -165,7 +165,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
     
     // Deepgram Aura Asteria (Female voice)
-    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=16000', {
+    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=8000', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -218,54 +218,49 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: 'trace', message: `AUDIO DIAGNOSTIC: Max Amplitude Before=${maxBefore} -> After=${maxAfter}` }));
     
     // CONVERT MONO TO STEREO:
-    // We must do this on the server because doing it on the ESP32 breaks when Wi-Fi fragments the packets!
-    const stereoBuffer = Buffer.alloc(pcmResponseData.length * 2);
-    for (let i = 0; i < pcmResponseData.length; i += 2) {
-      const sample = pcmResponseData.readInt16LE(i);
-      stereoBuffer.writeInt16LE(sample, i * 2);     // Left Channel
-      stereoBuffer.writeInt16LE(sample, i * 2 + 2); // Right Channel
-    }
+    // REMOVED! We send 100% pure MONO data over Wi-Fi to cut the bandwidth in half!
+    // The ESP32 hardware will automatically duplicate it to stereo for the MAX98357A.
+    const finalAudioBuffer = pcmResponseData;
     
     // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
-    // We are going to save the EXACT stereo buffer that we send to the ESP32 into a playable .wav file!
+    // We are going to save the EXACT mono buffer that we send to the ESP32 into a playable .wav file!
     const debugWavHeader = Buffer.alloc(44);
     debugWavHeader.write('RIFF', 0);
-    debugWavHeader.writeUInt32LE(36 + stereoBuffer.length, 4);
+    debugWavHeader.writeUInt32LE(36 + finalAudioBuffer.length, 4);
     debugWavHeader.write('WAVE', 8);
     debugWavHeader.write('fmt ', 12);
     debugWavHeader.writeUInt32LE(16, 16); // Subchunk1Size
     debugWavHeader.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
-    debugWavHeader.writeUInt16LE(2, 22); // NumChannels (2 = Stereo)
-    debugWavHeader.writeUInt32LE(16000, 24); // SampleRate
-    debugWavHeader.writeUInt32LE(16000 * 2 * 2, 28); // ByteRate
-    debugWavHeader.writeUInt16LE(4, 32); // BlockAlign
+    debugWavHeader.writeUInt16LE(1, 22); // NumChannels (1 = Mono)
+    debugWavHeader.writeUInt32LE(8000, 24); // SampleRate
+    debugWavHeader.writeUInt32LE(8000 * 2, 28); // ByteRate
+    debugWavHeader.writeUInt16LE(2, 32); // BlockAlign
     debugWavHeader.writeUInt16LE(16, 34); // BitsPerSample
     debugWavHeader.write('data', 36);
-    debugWavHeader.writeUInt32LE(stereoBuffer.length, 40);
-    fs.writeFileSync('debug_audio.wav', Buffer.concat([debugWavHeader, stereoBuffer]));
+    debugWavHeader.writeUInt32LE(finalAudioBuffer.length, 40);
+    fs.writeFileSync('debug_audio.wav', Buffer.concat([debugWavHeader, finalAudioBuffer]));
     ws.send(JSON.stringify({ type: 'trace', message: 'Saved debug_audio.wav to server folder!' }));
   
-    ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
+    ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // We send 1024 bytes of STEREO per chunk (16ms of audio at 16000Hz).
+    // We send 1024 bytes of MONO per chunk (64ms of audio at 8000Hz).
+    // Total bandwidth is now an incredibly tiny 16KB/sec! Even the weakest Wi-Fi chip can handle this!
     const chunkSize = 1024; 
-    const chunkDurationMs = (chunkSize / 4) / 16000 * 1000; // 16.0ms
+    const chunkDurationMs = (chunkSize / 2) / 8000 * 1000; // 64.0ms
     
-    // PRE-FILL: Send the first 32 chunks (32KB) instantly!
-    // This perfectly fills the ESP32's massive FreeRTOS Ring Buffer to exactly 50%.
-    const prefillChunks = 32;
+    // PRE-FILL: Send the first 16 chunks (16KB) instantly!
+    const prefillChunks = 16;
     let i = 0;
-    for (; i < stereoBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
-      ws.send(stereoBuffer.slice(i, i + chunkSize));
+    for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
+      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
     }
     
     // PACED STREAMING: Mathematically perfect average speed!
-    // The ESP32 FreeRTOS Ring Buffer absorbs any tiny network bursts perfectly!
     const startTime = Date.now();
     let pacedChunkIndex = 0;
     
-    for (; i < stereoBuffer.length; i += chunkSize) {
-      ws.send(stereoBuffer.slice(i, i + chunkSize));
+    for (; i < finalAudioBuffer.length; i += chunkSize) {
+      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
       pacedChunkIndex++;
       
       const expectedTime = startTime + (pacedChunkIndex * chunkDurationMs);
