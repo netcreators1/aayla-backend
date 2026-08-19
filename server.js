@@ -220,7 +220,18 @@ async function processAudio(pcmBuffer, ws, roomId) {
     // CONVERT MONO TO STEREO:
     // REMOVED! We send 100% pure MONO data over Wi-Fi to cut the bandwidth in half!
     // The ESP32 hardware will automatically duplicate it to stereo for the MAX98357A.
-    const finalAudioBuffer = pcmResponseData;
+    
+    // CRITICAL DMA ALIGNMENT FIX:
+    // The ESP32 I2S hardware DMA is 32-bit (4 bytes). If the total audio length is not a multiple of 4,
+    // the very last chunk will misalign the DMA pointer, permanently corrupting all subsequent audio!
+    // We MUST pad the buffer to a multiple of 4 bytes!
+    let paddedLength = pcmResponseData.length;
+    if (paddedLength % 4 !== 0) {
+      paddedLength += (4 - (paddedLength % 4));
+    }
+    const finalAudioBuffer = Buffer.alloc(paddedLength);
+    pcmResponseData.copy(finalAudioBuffer);
+    // The padded bytes will default to 0x00, which is perfect silence!
     
     // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
     // We save the EXACT mono buffer that we send to the ESP32 into a playable .wav file!
