@@ -259,8 +259,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const chunkSize = 1024; 
     const chunkDurationMs = (chunkSize / 2) / 8000 * 1000; // 64.0ms
     
-    // PRE-FILL: Send the first 16 chunks (16KB) instantly!
-    const prefillChunks = 16;
+    // PRE-FILL: Send the first 4 chunks (4KB) instantly!
+    // We cannot send 16 chunks because it overflows the ESP32's tiny TCP window buffer,
+    // which starves the LwIP network stack and causes massive audio dropout distortion!
+    const prefillChunks = 4;
     let i = 0;
     for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
@@ -268,7 +270,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     // PACED STREAMING: Mathematically perfect average speed!
     const startTime = Date.now();
-    let pacedChunkIndex = 0;
+    let pacedChunkIndex = prefillChunks; 
     
     for (; i < finalAudioBuffer.length; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
