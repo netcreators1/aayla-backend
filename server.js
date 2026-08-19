@@ -223,7 +223,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const finalAudioBuffer = pcmResponseData;
     
     // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
-    // We are going to save the EXACT mono buffer that we send to the ESP32 into a playable .wav file!
+    // We save the EXACT mono buffer that we send to the ESP32 into a playable .wav file!
     const debugWavHeader = Buffer.alloc(44);
     debugWavHeader.write('RIFF', 0);
     debugWavHeader.writeUInt32LE(36 + finalAudioBuffer.length, 4);
@@ -241,34 +241,12 @@ async function processAudio(pcmBuffer, ws, roomId) {
     fs.writeFileSync('debug_audio.wav', Buffer.concat([debugWavHeader, finalAudioBuffer]));
     ws.send(JSON.stringify({ type: 'trace', message: 'Saved debug_audio.wav to server folder!' }));
   
-    ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
+    // INSTEAD OF SENDING BINARY WEBSOCKET FRAMES, WE JUST SEND THE URL!
+    // The ESP32 will download it via standard HTTPS!
+    ws.send(JSON.stringify({ type: 'audio_url', url: 'https://aayla-backend.onrender.com/debug' }));
     
-    // We send 1024 bytes of MONO per chunk (64ms of audio at 8000Hz).
-    // Total bandwidth is now an incredibly tiny 16KB/sec! Even the weakest Wi-Fi chip can handle this!
-    const chunkSize = 1024; 
-    const chunkDurationMs = (chunkSize / 2) / 8000 * 1000; // 64.0ms
-    
-    // PRE-FILL: Send the first 16 chunks (16KB) instantly!
-    const prefillChunks = 16;
-    let i = 0;
-    for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
-      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
-    }
-    
-    // PACED STREAMING: Mathematically perfect average speed!
-    const startTime = Date.now();
-    let pacedChunkIndex = 0;
-    
-    for (; i < finalAudioBuffer.length; i += chunkSize) {
-      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
-      pacedChunkIndex++;
-      
-      const expectedTime = startTime + (pacedChunkIndex * chunkDurationMs);
-      const waitTime = expectedTime - Date.now();
-      if (waitTime > 0) {
-        await new Promise(res => setTimeout(res, waitTime));
-      }
-    }
+    // We no longer need to stream the bytes manually over WebSockets.
+    // The ESP32 HTTPClient will stream it directly.
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
     ws.send(JSON.stringify({ type: 'audio_end' }));
