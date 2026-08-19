@@ -218,22 +218,21 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
     // We are going to save the EXACT stereo buffer that we send to the ESP32 into a playable .wav file!
-    const fs = require('fs');
-    const wavHeader = Buffer.alloc(44);
-    wavHeader.write('RIFF', 0);
-    wavHeader.writeUInt32LE(36 + stereoBuffer.length, 4);
-    wavHeader.write('WAVE', 8);
-    wavHeader.write('fmt ', 12);
-    wavHeader.writeUInt32LE(16, 16); // Subchunk1Size
-    wavHeader.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
-    wavHeader.writeUInt16LE(2, 22); // NumChannels (2 = Stereo)
-    wavHeader.writeUInt32LE(16000, 24); // SampleRate
-    wavHeader.writeUInt32LE(16000 * 2 * 2, 28); // ByteRate
-    wavHeader.writeUInt16LE(4, 32); // BlockAlign
-    wavHeader.writeUInt16LE(16, 34); // BitsPerSample
-    wavHeader.write('data', 36);
-    wavHeader.writeUInt32LE(stereoBuffer.length, 40);
-    fs.writeFileSync('debug_audio.wav', Buffer.concat([wavHeader, stereoBuffer]));
+    const debugWavHeader = Buffer.alloc(44);
+    debugWavHeader.write('RIFF', 0);
+    debugWavHeader.writeUInt32LE(36 + stereoBuffer.length, 4);
+    debugWavHeader.write('WAVE', 8);
+    debugWavHeader.write('fmt ', 12);
+    debugWavHeader.writeUInt32LE(16, 16); // Subchunk1Size
+    debugWavHeader.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
+    debugWavHeader.writeUInt16LE(2, 22); // NumChannels (2 = Stereo)
+    debugWavHeader.writeUInt32LE(16000, 24); // SampleRate
+    debugWavHeader.writeUInt32LE(16000 * 2 * 2, 28); // ByteRate
+    debugWavHeader.writeUInt16LE(4, 32); // BlockAlign
+    debugWavHeader.writeUInt16LE(16, 34); // BitsPerSample
+    debugWavHeader.write('data', 36);
+    debugWavHeader.writeUInt32LE(stereoBuffer.length, 40);
+    fs.writeFileSync('debug_audio.wav', Buffer.concat([debugWavHeader, stereoBuffer]));
     ws.send(JSON.stringify({ type: 'trace', message: 'Saved debug_audio.wav to server folder!' }));
   
     ws.send(JSON.stringify({ type: 'audio_start', size: stereoBuffer.length }));
