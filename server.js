@@ -10,6 +10,16 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+// Serve the debug audio file
+app.get('/debug', (req, res) => {
+  const filePath = path.join(__dirname, 'debug_audio.wav');
+  if (fs.existsSync(filePath)) {
+    res.download(filePath);
+  } else {
+    res.status(404).send('Audio file not generated yet. Ask Aayla something first!');
+  }
+});
+
 // Utility to create a WAV header for 16-bit, 16kHz, mono PCM
 function createWavHeader(dataLength) {
   const header = Buffer.alloc(44);
