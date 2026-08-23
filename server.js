@@ -251,13 +251,14 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // We send 4096 bytes of MONO per chunk (85.3ms of audio at 24000Hz).
-    // This is required because Node.js setTimeout cannot reliably wait less than 30ms!
-    const chunkSize = 4096; 
-    const chunkDurationMs = (chunkSize / 2) / 24000 * 1000; // 85.33ms
+    // We send 1024 bytes of MONO per chunk (21.3ms of audio at 24000Hz).
+    // DO NOT increase chunkSize beyond 1024! The ESP32 WebSocketsClient library
+    // silently drops frames larger than its default internal buffer size!
+    const chunkSize = 1024; 
+    const chunkDurationMs = (chunkSize / 2) / 24000 * 1000; // 21.33ms
     
-    // PRE-FILL: Send the first 4 chunks (16KB) instantly to build a strong buffer!
-    const prefillChunks = 4;
+    // PRE-FILL: Send the first 12 chunks (12KB) instantly to build a massive buffer!
+    const prefillChunks = 12;
     let i = 0;
     for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
