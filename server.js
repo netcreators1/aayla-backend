@@ -188,13 +188,12 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // The ESP32 is powered by a USB port which only provides 500mA of total current.
-    // The ESP32 Wi-Fi uses 400mA, leaving only 100mA for the MAX98357A amplifier.
-    // If the digital volume is too loud, the amplifier tries to draw more than 100mA, causing the voltage to crash and creating "noise".
-    // We cap the volume at 4000 to keep current draw under the USB limit!
+    // With a 5V 2A power supply, the MAX98357A has plenty of current available.
+    // We can safely crank the digital amplitude up to 24000 (75% max) to completely eliminate 
+    // quantization noise/hiss without any risk of brownouts!
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 4000.0 / maxBefore; 
+      optimalMultiplier = 24000.0 / maxBefore; 
     }
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
