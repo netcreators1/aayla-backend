@@ -188,13 +188,11 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // If the volume is too loud, the MAX98357A draws massive current spikes from the breadboard.
-    // If the unshielded jumper wires have high resistance, this current spike causes the 3.3V logic lines 
-    // to sag (Voltage Droop), causing the amplifier to randomly miss I2S BCLK clock cycles!
-    // We lower the amplitude to 2000. It will be quiet, but if the distortion stops, we have proven it's a power sag issue!
+    // We lower the amplitude to 16000 (about 50% max volume) which is loud and clear, 
+    // but avoids the massive current spikes that cause voltage droop on breadboards.
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 2000.0 / maxBefore; 
+      optimalMultiplier = 16000.0 / maxBefore; 
     }
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
@@ -259,10 +257,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const chunkSize = 1024; 
     const chunkDurationMs = (chunkSize / 2) / 8000 * 1000; // 64.0ms
     
-    // PRE-FILL: Send the first 4 chunks (4KB) instantly!
-    // We cannot send 16 chunks because it overflows the ESP32's tiny TCP window buffer,
-    // which starves the LwIP network stack and causes massive audio dropout distortion!
-    const prefillChunks = 4;
+    // PRE-FILL: Send the first 8 chunks (8KB) instantly to build a strong buffer!
+    const prefillChunks = 8;
     let i = 0;
     for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
