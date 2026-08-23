@@ -188,11 +188,12 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // We set amplitude to 12000. This is loud enough to eliminate low-volume quantization 
-    // "hiss/distortion", but safe enough to avoid power sag on the breadboard.
+    // Because the MAX98357A GAIN pin is now grounded (3dB gain), the amplifier draws much less power.
+    // This allows us to crank the digital amplitude up to 24000 (75% max) to completely eliminate 
+    // quantization noise/hiss while remaining perfectly safe from power brownouts!
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 2000.0 / maxBefore; 
+      optimalMultiplier = 24000.0 / maxBefore; 
     }
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
