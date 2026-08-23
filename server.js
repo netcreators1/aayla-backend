@@ -237,30 +237,13 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // We send 1024 bytes of MONO per chunk (21.3ms of audio at 24000Hz).
+    // We send 1024 bytes per chunk. 
+    // We send them ALL instantly. The ESP32's I2S hardware buffer (portMAX_DELAY) will 
+    // naturally pace the stream, completely eliminating any network or Node.js jitter distortion!
     const chunkSize = 1024; 
     
-    // PRE-FILL: Send the first 12 chunks (12KB) instantly to build a massive buffer!
-    const prefillChunks = 12;
-    let i = 0;
-    for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
+    for (let i = 0; i < finalAudioBuffer.length; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
-    }
-    
-    // PACED STREAMING: We intentionally send chunks slightly FASTER than real-time (18ms instead of 21.33ms).
-    const startTime = Date.now();
-    const pacingMs = 18.0; 
-    let pacedChunkIndex = prefillChunks; 
-    
-    for (; i < finalAudioBuffer.length; i += chunkSize) {
-      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
-      pacedChunkIndex++;
-      
-      const expectedTime = startTime + (pacedChunkIndex * pacingMs);
-      const waitTime = expectedTime - Date.now();
-      if (waitTime > 0) {
-        await new Promise(res => setTimeout(res, waitTime));
-      }
     }
     
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
