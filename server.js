@@ -192,7 +192,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     // "hiss/distortion", but safe enough to avoid power sag on the breadboard.
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 12000.0 / maxBefore; 
+      optimalMultiplier = 2000.0 / maxBefore; 
     }
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
