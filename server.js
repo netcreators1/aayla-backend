@@ -188,11 +188,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // We lower the amplitude to 16000 (about 50% max volume) which is loud and clear, 
-    // but avoids the massive current spikes that cause voltage droop on breadboards.
+    // We lower the amplitude to 4000 to prevent massive current spikes that cause voltage droop on breadboards.
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 16000.0 / maxBefore; 
+      optimalMultiplier = 4000.0 / maxBefore; 
     }
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
@@ -252,13 +251,13 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // We send 1024 bytes of MONO per chunk (21.3ms of audio at 24000Hz).
-    // Total bandwidth is now 48KB/sec, which is well within ESP32 limits.
-    const chunkSize = 1024; 
-    const chunkDurationMs = (chunkSize / 2) / 24000 * 1000; // 21.33ms
+    // We send 4096 bytes of MONO per chunk (85.3ms of audio at 24000Hz).
+    // This is required because Node.js setTimeout cannot reliably wait less than 30ms!
+    const chunkSize = 4096; 
+    const chunkDurationMs = (chunkSize / 2) / 24000 * 1000; // 85.33ms
     
-    // PRE-FILL: Send the first 8 chunks (8KB) instantly to build a strong buffer!
-    const prefillChunks = 8;
+    // PRE-FILL: Send the first 4 chunks (16KB) instantly to build a strong buffer!
+    const prefillChunks = 4;
     let i = 0;
     for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
