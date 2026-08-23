@@ -188,32 +188,26 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // BREADBOARD SAFE VOLUME LIMITER:
-    // BREADBOARD SAFE VOLUME LIMITER:
-    // We set amplitude to 12000. This is loud enough to eliminate low-volume quantization 
-    // "hiss/distortion", but safe enough to avoid power sag on the breadboard.
+    // With the 2A mobile charger, we can safely crank the volume up to 24000.
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 12000.0 / maxBefore; 
+      optimalMultiplier = 24000.0 / maxBefore; 
     }
 
+    // CONVERT TO STEREO ON THE SERVER!
+    // This perfectly aligns the data for the ESP32 and prevents decimation aliasing distortion!
+    let stereoBuffer = Buffer.alloc(pcmResponseData.length * 2);
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
       sample = Math.floor(sample * optimalMultiplier);
       if (sample > 32767) sample = 32767;
       if (sample < -32768) sample = -32768;
-      pcmResponseData.writeInt16LE(sample, i);
+      
+      stereoBuffer.writeInt16LE(sample, i * 2);     // Left
+      stereoBuffer.writeInt16LE(sample, i * 2 + 2); // Right
     }
     
-    // The ESP32 I2S hardware DMA is 32-bit (4 bytes). If the total audio length is not a multiple of 4,
-    // the very last chunk will misalign the DMA pointer, permanently corrupting all subsequent audio!
-    // We MUST pad the buffer to a multiple of 4 bytes!
-    let paddedLength = pcmResponseData.length;
-    if (paddedLength % 4 !== 0) {
-      paddedLength += (4 - (paddedLength % 4));
-    }
-    const finalAudioBuffer = Buffer.alloc(paddedLength);
-    pcmResponseData.copy(finalAudioBuffer);
+    const finalAudioBuffer = stereoBuffer;
     
     // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
     const debugWavHeader = Buffer.alloc(44);
@@ -223,10 +217,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
     debugWavHeader.write('fmt ', 12);
     debugWavHeader.writeUInt32LE(16, 16); // Subchunk1Size
     debugWavHeader.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
-    debugWavHeader.writeUInt16LE(1, 22); // NumChannels (1 = Mono)
+    debugWavHeader.writeUInt16LE(2, 22); // NumChannels (2 = Stereo)
     debugWavHeader.writeUInt32LE(24000, 24); // SampleRate
-    debugWavHeader.writeUInt32LE(24000 * 1 * 2, 28); // ByteRate
-    debugWavHeader.writeUInt16LE(1 * 2, 32); // BlockAlign
+    debugWavHeader.writeUInt32LE(24000 * 2 * 2, 28); // ByteRate
+    debugWavHeader.writeUInt16LE(2 * 2, 32); // BlockAlign
     debugWavHeader.writeUInt16LE(16, 34); // BitsPerSample
     debugWavHeader.write('data', 36);
     debugWavHeader.writeUInt32LE(finalAudioBuffer.length, 40);
@@ -237,15 +231,13 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // We send 1024 bytes per chunk. 
-    // We send them ALL instantly. The ESP32's I2S hardware buffer (portMAX_DELAY) will 
-    // naturally pace the stream, completely eliminating any network or Node.js jitter distortion!
+    // BULK UNPACED STREAMING
+    // We blast all chunks over TCP instantly. The ESP32's hardware I2S buffer will naturally pace the stream.
     const chunkSize = 1024; 
     
     for (let i = 0; i < finalAudioBuffer.length; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
     }
-    
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
     ws.send(JSON.stringify({ type: 'audio_end' }));
     
