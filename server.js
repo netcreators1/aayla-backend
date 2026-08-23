@@ -188,10 +188,11 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // We lower the amplitude to 4000 to prevent massive current spikes that cause voltage droop on breadboards.
+    // We set amplitude to 12000. This is loud enough to eliminate low-volume quantization 
+    // "hiss/distortion", but safe enough to avoid power sag on the breadboard.
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 4000.0 / maxBefore; 
+      optimalMultiplier = 12000.0 / maxBefore; 
     }
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
@@ -264,15 +265,17 @@ async function processAudio(pcmBuffer, ws, roomId) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
     }
     
-    // PACED STREAMING: Mathematically perfect average speed!
+    // PACED STREAMING: We intentionally send chunks slightly FASTER than real-time (18ms instead of 21.33ms).
+    // This forces the ESP32's buffer to stay 100% full at all times, completely eliminating network crackle!
     const startTime = Date.now();
+    const pacingMs = 18.0; 
     let pacedChunkIndex = prefillChunks; 
     
     for (; i < finalAudioBuffer.length; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
       pacedChunkIndex++;
       
-      const expectedTime = startTime + (pacedChunkIndex * chunkDurationMs);
+      const expectedTime = startTime + (pacedChunkIndex * pacingMs);
       const waitTime = expectedTime - Date.now();
       if (waitTime > 0) {
         await new Promise(res => setTimeout(res, waitTime));
