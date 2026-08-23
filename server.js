@@ -188,12 +188,11 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // With a 5V 2A power supply, the MAX98357A has plenty of current available.
-    // We can safely crank the digital amplitude up to 24000 (75% max) to completely eliminate 
-    // quantization noise/hiss without any risk of brownouts!
+    // BREADBOARD SAFE VOLUME LIMITER:
+    // We cap the volume at 4000 to keep current draw under the USB limit!
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 24000.0 / maxBefore; 
+      optimalMultiplier = 4000.0 / maxBefore; 
     }
 
     // Convert Mono to Stereo on the Server!
@@ -240,11 +239,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // We send 1024 bytes of MONO per chunk (21.3ms of audio at 24000Hz).
+    // We send 1024 bytes of STEREO per chunk (10.66ms of audio at 24000Hz).
     // DO NOT increase chunkSize beyond 1024! The ESP32 WebSocketsClient library
     // silently drops frames larger than its default internal buffer size!
     const chunkSize = 1024; 
-    const chunkDurationMs = (chunkSize / 2) / 24000 * 1000; // 21.33ms
     
     // PRE-FILL: Send the first 12 chunks (12KB) instantly to build a massive buffer!
     const prefillChunks = 12;
@@ -253,10 +251,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
     }
     
-    // PACED STREAMING: We intentionally send chunks slightly FASTER than real-time (18ms instead of 21.33ms).
+    // PACED STREAMING: We intentionally send chunks slightly FASTER than real-time (8ms instead of 10.66ms).
     // This forces the ESP32's buffer to stay 100% full at all times, completely eliminating network crackle!
     const startTime = Date.now();
-    const pacingMs = 18.0; 
+    const pacingMs = 8.0; 
     let pacedChunkIndex = prefillChunks; 
     
     for (; i < finalAudioBuffer.length; i += chunkSize) {
