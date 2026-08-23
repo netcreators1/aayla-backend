@@ -189,35 +189,33 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     // BREADBOARD SAFE VOLUME LIMITER:
     // BREADBOARD SAFE VOLUME LIMITER:
-    // We cap the volume at 4000 to keep current draw under the USB limit!
+    // BREADBOARD SAFE VOLUME LIMITER:
+    // We set amplitude to 12000. This is loud enough to eliminate low-volume quantization 
+    // "hiss/distortion", but safe enough to avoid power sag on the breadboard.
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 4000.0 / maxBefore; 
+      optimalMultiplier = 12000.0 / maxBefore; 
     }
-
-    // Convert Mono to Stereo on the Server!
-    // This completely bypasses any memory alignment/endianness bugs on the ESP32 CPU!
-    let stereoBuffer = Buffer.alloc(pcmResponseData.length * 2);
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
       sample = Math.floor(sample * optimalMultiplier);
       if (sample > 32767) sample = 32767;
       if (sample < -32768) sample = -32768;
-      
-      // Write Left Channel
-      stereoBuffer.writeInt16LE(sample, i * 2);
-      // Write Right Channel
-      stereoBuffer.writeInt16LE(sample, i * 2 + 2);
+      pcmResponseData.writeInt16LE(sample, i);
     }
     
-    // The ESP32 I2S hardware DMA is 32-bit (4 bytes). 
-    // Since stereoBuffer is EXACTLY 4 bytes per frame (16-bit L + 16-bit R),
-    // it is mathematically guaranteed to be a multiple of 4! No padding required!
-    const finalAudioBuffer = stereoBuffer;
+    // The ESP32 I2S hardware DMA is 32-bit (4 bytes). If the total audio length is not a multiple of 4,
+    // the very last chunk will misalign the DMA pointer, permanently corrupting all subsequent audio!
+    // We MUST pad the buffer to a multiple of 4 bytes!
+    let paddedLength = pcmResponseData.length;
+    if (paddedLength % 4 !== 0) {
+      paddedLength += (4 - (paddedLength % 4));
+    }
+    const finalAudioBuffer = Buffer.alloc(paddedLength);
+    pcmResponseData.copy(finalAudioBuffer);
     
     // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
-    // We save the EXACT stereo buffer that we send to the ESP32 into a playable .wav file!
     const debugWavHeader = Buffer.alloc(44);
     debugWavHeader.write('RIFF', 0);
     debugWavHeader.writeUInt32LE(36 + finalAudioBuffer.length, 4);
@@ -225,10 +223,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
     debugWavHeader.write('fmt ', 12);
     debugWavHeader.writeUInt32LE(16, 16); // Subchunk1Size
     debugWavHeader.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
-    debugWavHeader.writeUInt16LE(2, 22); // NumChannels (2 = Stereo)
+    debugWavHeader.writeUInt16LE(1, 22); // NumChannels (1 = Mono)
     debugWavHeader.writeUInt32LE(24000, 24); // SampleRate
-    debugWavHeader.writeUInt32LE(24000 * 2 * 2, 28); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
-    debugWavHeader.writeUInt16LE(2 * 2, 32); // BlockAlign (NumChannels * BitsPerSample/8)
+    debugWavHeader.writeUInt32LE(24000 * 1 * 2, 28); // ByteRate
+    debugWavHeader.writeUInt16LE(1 * 2, 32); // BlockAlign
     debugWavHeader.writeUInt16LE(16, 34); // BitsPerSample
     debugWavHeader.write('data', 36);
     debugWavHeader.writeUInt32LE(finalAudioBuffer.length, 40);
@@ -239,9 +237,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // We send 1024 bytes of STEREO per chunk (10.66ms of audio at 24000Hz).
-    // DO NOT increase chunkSize beyond 1024! The ESP32 WebSocketsClient library
-    // silently drops frames larger than its default internal buffer size!
+    // We send 1024 bytes of MONO per chunk (21.3ms of audio at 24000Hz).
     const chunkSize = 1024; 
     
     // PRE-FILL: Send the first 12 chunks (12KB) instantly to build a massive buffer!
@@ -251,10 +247,9 @@ async function processAudio(pcmBuffer, ws, roomId) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
     }
     
-    // PACED STREAMING: We intentionally send chunks slightly FASTER than real-time (8ms instead of 10.66ms).
-    // This forces the ESP32's buffer to stay 100% full at all times, completely eliminating network crackle!
+    // PACED STREAMING: We intentionally send chunks slightly FASTER than real-time (18ms instead of 21.33ms).
     const startTime = Date.now();
-    const pacingMs = 8.0; 
+    const pacingMs = 18.0; 
     let pacedChunkIndex = prefillChunks; 
     
     for (; i < finalAudioBuffer.length; i += chunkSize) {
