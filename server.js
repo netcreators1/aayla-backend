@@ -165,7 +165,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
     
     // Deepgram Aura Asteria (Female voice)
-    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=8000', {
+    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=24000', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -241,8 +241,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     debugWavHeader.writeUInt32LE(16, 16); // Subchunk1Size
     debugWavHeader.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
     debugWavHeader.writeUInt16LE(1, 22); // NumChannels (1 = Mono)
-    debugWavHeader.writeUInt32LE(8000, 24); // SampleRate
-    debugWavHeader.writeUInt32LE(8000 * 2, 28); // ByteRate
+    debugWavHeader.writeUInt32LE(24000, 24); // SampleRate
+    debugWavHeader.writeUInt32LE(24000 * 2, 28); // ByteRate
     debugWavHeader.writeUInt16LE(2, 32); // BlockAlign
     debugWavHeader.writeUInt16LE(16, 34); // BitsPerSample
     debugWavHeader.write('data', 36);
@@ -252,10 +252,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // We send 1024 bytes of MONO per chunk (64ms of audio at 8000Hz).
-    // Total bandwidth is now an incredibly tiny 16KB/sec! Even the weakest Wi-Fi chip can handle this!
+    // We send 1024 bytes of MONO per chunk (21.3ms of audio at 24000Hz).
+    // Total bandwidth is now 48KB/sec, which is well within ESP32 limits.
     const chunkSize = 1024; 
-    const chunkDurationMs = (chunkSize / 2) / 8000 * 1000; // 64.0ms
+    const chunkDurationMs = (chunkSize / 2) / 24000 * 1000; // 21.33ms
     
     // PRE-FILL: Send the first 8 chunks (8KB) instantly to build a strong buffer!
     const prefillChunks = 8;
