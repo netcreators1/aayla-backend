@@ -196,44 +196,29 @@ async function processAudio(pcmBuffer, ws, roomId) {
       optimalMultiplier = 24000.0 / maxBefore; 
     }
 
+    // Convert Mono to Stereo on the Server!
+    // This completely bypasses any memory alignment/endianness bugs on the ESP32 CPU!
+    let stereoBuffer = Buffer.alloc(pcmResponseData.length * 2);
+
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
-      
-      // Boost volume to the safe 16000 sweet spot
       sample = Math.floor(sample * optimalMultiplier);
-      
-      // Final safety clamp
       if (sample > 32767) sample = 32767;
       if (sample < -32768) sample = -32768;
       
-      pcmResponseData.writeInt16LE(sample, i);
+      // Write Left Channel
+      stereoBuffer.writeInt16LE(sample, i * 2);
+      // Write Right Channel
+      stereoBuffer.writeInt16LE(sample, i * 2 + 2);
     }
     
-    let maxAfter = 0;
-    for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
-      let sample = Math.abs(pcmResponseData.readInt16LE(i));
-      if (sample > maxAfter) maxAfter = sample;
-    }
-    ws.send(JSON.stringify({ type: 'trace', message: `AUDIO DIAGNOSTIC: Max Amplitude Before=${maxBefore} -> After=${maxAfter}` }));
-    
-    // CONVERT MONO TO STEREO:
-    // REMOVED! We send 100% pure MONO data over Wi-Fi to cut the bandwidth in half!
-    // The ESP32 hardware will automatically duplicate it to stereo for the MAX98357A.
-    
-    // CRITICAL DMA ALIGNMENT FIX:
-    // The ESP32 I2S hardware DMA is 32-bit (4 bytes). If the total audio length is not a multiple of 4,
-    // the very last chunk will misalign the DMA pointer, permanently corrupting all subsequent audio!
-    // We MUST pad the buffer to a multiple of 4 bytes!
-    let paddedLength = pcmResponseData.length;
-    if (paddedLength % 4 !== 0) {
-      paddedLength += (4 - (paddedLength % 4));
-    }
-    const finalAudioBuffer = Buffer.alloc(paddedLength);
-    pcmResponseData.copy(finalAudioBuffer);
-    // The padded bytes will default to 0x00, which is perfect silence!
+    // The ESP32 I2S hardware DMA is 32-bit (4 bytes). 
+    // Since stereoBuffer is EXACTLY 4 bytes per frame (16-bit L + 16-bit R),
+    // it is mathematically guaranteed to be a multiple of 4! No padding required!
+    const finalAudioBuffer = stereoBuffer;
     
     // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
-    // We save the EXACT mono buffer that we send to the ESP32 into a playable .wav file!
+    // We save the EXACT stereo buffer that we send to the ESP32 into a playable .wav file!
     const debugWavHeader = Buffer.alloc(44);
     debugWavHeader.write('RIFF', 0);
     debugWavHeader.writeUInt32LE(36 + finalAudioBuffer.length, 4);
@@ -241,15 +226,17 @@ async function processAudio(pcmBuffer, ws, roomId) {
     debugWavHeader.write('fmt ', 12);
     debugWavHeader.writeUInt32LE(16, 16); // Subchunk1Size
     debugWavHeader.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
-    debugWavHeader.writeUInt16LE(1, 22); // NumChannels (1 = Mono)
+    debugWavHeader.writeUInt16LE(2, 22); // NumChannels (2 = Stereo)
     debugWavHeader.writeUInt32LE(24000, 24); // SampleRate
-    debugWavHeader.writeUInt32LE(24000 * 2, 28); // ByteRate
-    debugWavHeader.writeUInt16LE(2, 32); // BlockAlign
+    debugWavHeader.writeUInt32LE(24000 * 2 * 2, 28); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+    debugWavHeader.writeUInt16LE(2 * 2, 32); // BlockAlign (NumChannels * BitsPerSample/8)
     debugWavHeader.writeUInt16LE(16, 34); // BitsPerSample
     debugWavHeader.write('data', 36);
     debugWavHeader.writeUInt32LE(finalAudioBuffer.length, 40);
-    fs.writeFileSync('debug_audio.wav', Buffer.concat([debugWavHeader, finalAudioBuffer]));
-    ws.send(JSON.stringify({ type: 'trace', message: 'Saved debug_audio.wav to server folder!' }));
+    
+    fs.writeFileSync('debug_audio.wav', debugWavHeader);
+    fs.appendFileSync('debug_audio.wav', finalAudioBuffer);
+    ws.send(JSON.stringify({ type: 'trace', message: `Saved debug_audio.wav to server folder!` }));
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
