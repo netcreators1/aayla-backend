@@ -11,13 +11,9 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 // Serve the debug audio file
-app.get('/debug', (req, res) => {
-  const filePath = path.join(__dirname, 'debug_audio.wav');
-  if (fs.existsSync(filePath)) {
-    res.download(filePath);
-  } else {
-    res.status(404).send('Audio file not generated yet. Ask Aayla something first!');
-  }
+app.get('/audio', (req, res) => {
+  const filePath = path.join(__dirname, 'response.mp3');
+  if (fs.existsSync(filePath)) { res.sendFile(filePath); } else { res.status(404).send('Not found'); }
 });
 
 app.get('/test-sine', async (req, res) => {
@@ -223,7 +219,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
     
     // Deepgram Aura Asteria (Female voice)
-    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=8000', {
+    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=mp3', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -237,76 +233,9 @@ async function processAudio(pcmBuffer, ws, roomId) {
       return;
     }
 
-    let pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
-    
-    let optimalMultiplier = 0.05;
-
-    for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
-      let sample = pcmResponseData.readInt16LE(i);
-      sample = Math.floor(sample * optimalMultiplier);
-      if (sample > 32767) sample = 32767;
-      if (sample < -32768) sample = -32768;
-      pcmResponseData.writeInt16LE(sample, i);
-    }
-    
-    // The ESP32 I2S hardware DMA is 32-bit (4 bytes). We must pad to a multiple of 4.
-    let paddedLength = pcmResponseData.length;
-    if (paddedLength % 4 !== 0) {
-      paddedLength += (4 - (paddedLength % 4));
-    }
-    const finalAudioBuffer = Buffer.alloc(paddedLength);
-    pcmResponseData.copy(finalAudioBuffer);
-    
-    // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
-    const debugWavHeader = Buffer.alloc(44);
-    debugWavHeader.write('RIFF', 0);
-    debugWavHeader.writeUInt32LE(36 + finalAudioBuffer.length, 4);
-    debugWavHeader.write('WAVE', 8);
-    debugWavHeader.write('fmt ', 12);
-    debugWavHeader.writeUInt32LE(16, 16); 
-    debugWavHeader.writeUInt16LE(1, 20); 
-    debugWavHeader.writeUInt16LE(1, 22); 
-    debugWavHeader.writeUInt32LE(8000, 24); 
-    debugWavHeader.writeUInt32LE(8000 * 1 * 2, 28); 
-    debugWavHeader.writeUInt16LE(1 * 2, 32); 
-    debugWavHeader.writeUInt16LE(16, 34); 
-    debugWavHeader.write('data', 36);
-    debugWavHeader.writeUInt32LE(finalAudioBuffer.length, 40);
-    
-    fs.writeFileSync('debug_audio.wav', debugWavHeader);
-    fs.appendFileSync('debug_audio.wav', finalAudioBuffer);
-    ws.send(JSON.stringify({ type: 'trace', message: `Saved debug_audio.wav to server folder!` }));
-  
-    ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
-    
-    const chunkSize = 1024;
-    const prefillChunks = 5; // 312ms shock absorption
-    let i = 0;
-    
-    for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
-      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
-    }
-    
-    const startTime = Date.now();
-    // 1024 bytes of 24kHz Mono = 21.33ms. Pace at 19.5ms (faster than real-time)
-    const pacingMs = 64.0; 
-    let pacedChunkIndex = prefillChunks; 
-    
-    for (; i < finalAudioBuffer.length; i += chunkSize) {
-      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
-      pacedChunkIndex++;
-      
-      const expectedTime = startTime + (pacedChunkIndex * pacingMs);
-      const waitTime = expectedTime - Date.now();
-      if (waitTime > 0) {
-        await new Promise(r => setTimeout(r, waitTime));
-      }
-    }
-    
-    const durationMs = (finalAudioBuffer.length / 2 / 8000) * 1000;
-    setTimeout(() => {
-        ws.send(JSON.stringify({ type: 'audio_end' }));
-    }, durationMs + 1000);
+    const mp3Buffer = Buffer.from(await ttsResponse.arrayBuffer());
+    fs.writeFileSync('response.mp3', mp3Buffer);
+    ws.send(JSON.stringify({ type: 'play_url', url: 'https://aayla-backend.onrender.com/audio' }));
 
   } catch (error) {
     console.error("Error processing audio:", error);
@@ -318,6 +247,7 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Aayla Voice Backend running on port ${PORT}`);
 });
+
 
 
 
