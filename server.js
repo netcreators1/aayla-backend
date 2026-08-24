@@ -23,7 +23,7 @@ app.get('/debug', (req, res) => {
 app.get('/test-sine', async (req, res) => {
   res.send("Generating 3-second sine wave and sending with ADVANCED PACING...");
   
-  const sampleRate = 16000;
+  const sampleRate = 8000;
   const durationSec = 3;
   const freq = 440.0;
   const amplitude = 4000; 
@@ -58,7 +58,7 @@ app.get('/test-sine', async (req, res) => {
       const startTime = Date.now();
       // 1024 bytes of 24kHz Mono = 21.33ms. We pace at 19.5ms to send slightly FASTER than real-time,
       // which guarantees the buffer stays full without hitting TCP Zero Window!
-      const pacingMs = 19.5; 
+      const pacingMs = 60.0; 
       let pacedChunkIndex = prefillChunks; 
       
       for (; i < finalAudioBuffer.length; i += chunkSize) {
@@ -88,8 +88,8 @@ function createWavHeader(dataLength) {
   header.writeUInt32LE(16, 16); // Subchunk1Size
   header.writeUInt16LE(1, 20); // AudioFormat (PCM)
   header.writeUInt16LE(1, 22); // NumChannels
-  header.writeUInt32LE(16000, 24); // SampleRate
-  header.writeUInt32LE(16000 * 2, 28); // ByteRate
+  header.writeUInt32LE(8000, 24); // SampleRate
+  header.writeUInt32LE(8000 * 2, 28); // ByteRate
   header.writeUInt16LE(2, 32); // BlockAlign
   header.writeUInt16LE(16, 34); // BitsPerSample
   header.write('data', 36);
@@ -223,7 +223,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
     
     // Deepgram Aura Asteria (Female voice)
-    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=16000', {
+    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&container=none&sample_rate=8000', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -277,8 +277,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     debugWavHeader.writeUInt32LE(16, 16); 
     debugWavHeader.writeUInt16LE(1, 20); 
     debugWavHeader.writeUInt16LE(1, 22); 
-    debugWavHeader.writeUInt32LE(16000, 24); 
-    debugWavHeader.writeUInt32LE(16000 * 1 * 2, 28); 
+    debugWavHeader.writeUInt32LE(8000, 24); 
+    debugWavHeader.writeUInt32LE(8000 * 1 * 2, 28); 
     debugWavHeader.writeUInt16LE(1 * 2, 32); 
     debugWavHeader.writeUInt16LE(16, 34); 
     debugWavHeader.write('data', 36);
@@ -300,7 +300,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     const startTime = Date.now();
     // 1024 bytes of 24kHz Mono = 21.33ms. Pace at 19.5ms (faster than real-time)
-    const pacingMs = 19.5; 
+    const pacingMs = 60.0; 
     let pacedChunkIndex = prefillChunks; 
     
     for (; i < finalAudioBuffer.length; i += chunkSize) {
@@ -314,7 +314,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
       }
     }
     
-    const durationMs = (finalAudioBuffer.length / 2 / 16000) * 1000;
+    const durationMs = (finalAudioBuffer.length / 2 / 8000) * 1000;
     setTimeout(() => {
         ws.send(JSON.stringify({ type: 'audio_end' }));
     }, durationMs + 1000);
