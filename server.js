@@ -231,12 +231,33 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // BULK UNPACED STREAMING
-    // We blast all chunks over TCP instantly. The ESP32's hardware I2S buffer will naturally pace the stream.
+    // PACED STREAMING
+    // We send 1024 bytes of STEREO per chunk (10.66ms of audio at 24000Hz).
+    // We intentionally send chunks slightly FASTER than real-time (10.0ms instead of 10.66ms).
+    // This allows the ESP32 DMA buffer to slowly fill up without ever starving,
+    // and without ever filling up completely (which would block the WebSocket loop and corrupt data).
     const chunkSize = 1024; 
     
-    for (let i = 0; i < finalAudioBuffer.length; i += chunkSize) {
+    // PRE-FILL: Send the first 8 chunks (8KB) instantly to build a healthy buffer.
+    const prefillChunks = 8;
+    let i = 0;
+    for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
+    }
+    
+    const startTime = Date.now();
+    const pacingMs = 10.0; 
+    let pacedChunkIndex = prefillChunks; 
+    
+    for (; i < finalAudioBuffer.length; i += chunkSize) {
+      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
+      pacedChunkIndex++;
+      
+      const expectedTime = startTime + (pacedChunkIndex * pacingMs);
+      const waitTime = expectedTime - Date.now();
+      if (waitTime > 0) {
+        await new Promise(res => setTimeout(res, waitTime));
+      }
     }
     // Tell the ESP32 we are done sending audio so it can go back to IDLE
     ws.send(JSON.stringify({ type: 'audio_end' }));
