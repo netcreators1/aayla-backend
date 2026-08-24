@@ -21,7 +21,7 @@ app.get('/debug', (req, res) => {
 });
 
 app.get('/test-sine', async (req, res) => {
-  res.send("Generating 3-second sine wave and sending UNPACED...");
+  res.send("Generating 3-second sine wave and sending with ADVANCED PACING...");
   
   const sampleRate = 24000;
   const durationSec = 3;
@@ -46,14 +46,35 @@ app.get('/test-sine', async (req, res) => {
   wss.clients.forEach(async (ws) => {
       ws.send(JSON.stringify({ type: "audio_start", size: finalAudioBuffer.length }));
       
-      // SEND INSTANTLY (UNPACED) to rely on ESP32 TCP Zero Window and DMA blocking
-      // This completely eliminates public internet jitter buffer underruns!
       const chunkSize = 1024;
-      for (let i = 0; i < finalAudioBuffer.length; i += chunkSize) {
+      // Prefill 15 chunks (15KB = 312ms of audio) instantly to absorb network jitter
+      const prefillChunks = 15;
+      let i = 0;
+      
+      for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
         ws.send(finalAudioBuffer.slice(i, i + chunkSize));
       }
       
-      ws.send(JSON.stringify({ type: "audio_end" }));
+      const startTime = Date.now();
+      // 1024 bytes of 24kHz Mono = 21.33ms. We pace at 19.5ms to send slightly FASTER than real-time,
+      // which guarantees the buffer stays full without hitting TCP Zero Window!
+      const pacingMs = 19.5; 
+      let pacedChunkIndex = prefillChunks; 
+      
+      for (; i < finalAudioBuffer.length; i += chunkSize) {
+        ws.send(finalAudioBuffer.slice(i, i + chunkSize));
+        pacedChunkIndex++;
+        
+        const expectedTime = startTime + (pacedChunkIndex * pacingMs);
+        const waitTime = expectedTime - Date.now();
+        if (waitTime > 0) {
+          await new Promise(r => setTimeout(r, waitTime));
+        }
+      }
+      
+      setTimeout(() => {
+        ws.send(JSON.stringify({ type: "audio_end" }));
+      }, 1000);
   });
 });
 
@@ -269,20 +290,30 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // SEND INSTANTLY (UNPACED) to rely on ESP32 TCP Zero Window and DMA blocking
-    // This completely eliminates public internet jitter buffer underruns!
-    const chunkSize = 1024; 
+    const chunkSize = 1024;
+    const prefillChunks = 15; // 312ms shock absorption
+    let i = 0;
     
-    for (let i = 0; i < finalAudioBuffer.length; i += chunkSize) {
+    for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
     }
     
-    // We do NOT send audio_end here immediately!
-    // Because we just blasted the entire file into the TCP socket, the ESP32 might take 3 seconds to play it!
-    // If we send audio_end, it will cut off the playback instantly.
-    // We just wait for the ESP32 to finish playing on its own.
-    // Wait, the ESP32 needs audio_end to go back to IDLE state!
-    // So we just guess the duration:
+    const startTime = Date.now();
+    // 1024 bytes of 24kHz Mono = 21.33ms. Pace at 19.5ms (faster than real-time)
+    const pacingMs = 19.5; 
+    let pacedChunkIndex = prefillChunks; 
+    
+    for (; i < finalAudioBuffer.length; i += chunkSize) {
+      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
+      pacedChunkIndex++;
+      
+      const expectedTime = startTime + (pacedChunkIndex * pacingMs);
+      const waitTime = expectedTime - Date.now();
+      if (waitTime > 0) {
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+    }
+    
     const durationMs = (finalAudioBuffer.length / 2 / 24000) * 1000;
     setTimeout(() => {
         ws.send(JSON.stringify({ type: 'audio_end' }));
