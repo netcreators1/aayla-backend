@@ -219,7 +219,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS..." }));
     
     // Deepgram Aura Asteria (Female voice)
-    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=mp3', {
+    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&sample_rate=16000', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -229,25 +229,22 @@ async function processAudio(pcmBuffer, ws, roomId) {
     });
 
     if (!ttsResponse.ok) {
-      console.error("Deepgram TTS Error:", await ttsResponse.text());
-      return;
-    }
-
-    const mp3Buffer = Buffer.from(await ttsResponse.arrayBuffer());
-    fs.writeFileSync('response.mp3', mp3Buffer);
-    ws.send(JSON.stringify({ type: 'play_url', url: 'https://aayla-backend.onrender.com/audio' }));
-
-  } catch (error) {
-    console.error("Error processing audio:", error);
-    ws.send(JSON.stringify({ type: "trace", message: `Error processing audio: ${error.message}` }));
+    paddedLength += (4 - (paddedLength % 4));
   }
-}
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Aayla Voice Backend running on port ${PORT}`);
-});
-
-
-
-
+  const finalAudioBuffer = Buffer.alloc(paddedLength);
+  pcmResponseData.copy(finalAudioBuffer);
+  
+  wss.clients.forEach(async (ws) => {
+      ws.send(JSON.stringify({ type: "audio_start", size: finalAudioBuffer.length }));
+      
+      const chunkSize = 1024;
+      // Prefill 15 chunks (15KB = 312ms of audio) instantly to absorb network jitter
+      const prefillChunks = 5;
+      let i = 0;
+      
+      for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
+        ws.send(finalAudioBuffer.slice(i, i + chunkSize));
+      }
+      
+      const startTime = Date.now();
+      // 1024 bytes of 24kHz Mono = 21.33ms. We pace at 19.5ms to send slightly FASTER than real-time,
