@@ -11,6 +11,63 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 // Serve the debug audio file
+app.get('/test-sine', async (req, res) => {
+  res.send("Generating 3-second sine wave and sending to all connected ESP32s...");
+  
+  const sampleRate = 24000;
+  const durationSec = 3;
+  const freq = 440.0;
+  const amplitude = 2000; // Low volume for safety
+  
+  const totalSamples = sampleRate * durationSec;
+  const pcmResponseData = Buffer.alloc(totalSamples * 2);
+  
+  for (let i = 0; i < totalSamples; i++) {
+    let sample = Math.floor(amplitude * Math.sin(2.0 * Math.PI * freq * i / sampleRate));
+    pcmResponseData.writeInt16LE(sample, i * 2);
+  }
+  
+  // Apply padding (must be multiple of 4 bytes)
+  let paddedLength = pcmResponseData.length;
+  if (paddedLength % 4 !== 0) {
+    paddedLength += (4 - (paddedLength % 4));
+  }
+  const finalAudioBuffer = Buffer.alloc(paddedLength);
+  pcmResponseData.copy(finalAudioBuffer);
+  
+  // Broadcast to all connected WebSockets
+  wss.clients.forEach(async (ws) => {
+      ws.send(JSON.stringify({ type: "audio_start", size: finalAudioBuffer.length }));
+      
+      const chunkSize = 1024;
+      const prefillChunks = 8;
+      let i = 0;
+      
+      for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
+        ws.send(finalAudioBuffer.slice(i, i + chunkSize));
+      }
+      
+      const startTime = Date.now();
+      const pacingMs = 18.0; 
+      let pacedChunkIndex = prefillChunks; 
+      
+      for (; i < finalAudioBuffer.length; i += chunkSize) {
+        ws.send(finalAudioBuffer.slice(i, i + chunkSize));
+        pacedChunkIndex++;
+        
+        const expectedTime = startTime + (pacedChunkIndex * pacingMs);
+        const waitTime = expectedTime - Date.now();
+        if (waitTime > 0) {
+          await new Promise(r => setTimeout(r, waitTime));
+        }
+      }
+      
+      setTimeout(() => {
+        ws.send(JSON.stringify({ type: "audio_end" }));
+      }, 500);
+  });
+});
+
 app.get('/debug', (req, res) => {
   const filePath = path.join(__dirname, 'debug_audio.wav');
   if (fs.existsSync(filePath)) {
@@ -188,26 +245,27 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
 
     // BREADBOARD SAFE VOLUME LIMITER:
-    // With the 2A mobile charger, we can safely crank the volume up to 24000.
+    // We cap the volume at 4000 to prevent USB brownouts on the breadboard!
     let optimalMultiplier = 1.0;
     if (maxBefore > 0) {
-      optimalMultiplier = 24000.0 / maxBefore; 
+      optimalMultiplier = 4000.0 / maxBefore; 
     }
 
-    // CONVERT TO STEREO ON THE SERVER!
-    // This perfectly aligns the data for the ESP32 and prevents decimation aliasing distortion!
-    let stereoBuffer = Buffer.alloc(pcmResponseData.length * 2);
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
       sample = Math.floor(sample * optimalMultiplier);
       if (sample > 32767) sample = 32767;
       if (sample < -32768) sample = -32768;
-      
-      stereoBuffer.writeInt16LE(sample, i * 2);     // Left
-      stereoBuffer.writeInt16LE(sample, i * 2 + 2); // Right
+      pcmResponseData.writeInt16LE(sample, i);
     }
     
-    const finalAudioBuffer = stereoBuffer;
+    // The ESP32 I2S hardware DMA is 32-bit (4 bytes). We must pad to a multiple of 4.
+    let paddedLength = pcmResponseData.length;
+    if (paddedLength % 4 !== 0) {
+      paddedLength += (4 - (paddedLength % 4));
+    }
+    const finalAudioBuffer = Buffer.alloc(paddedLength);
+    pcmResponseData.copy(finalAudioBuffer);
     
     // SERVER-SIDE AUDIO DIAGNOSTIC DUMP
     const debugWavHeader = Buffer.alloc(44);
@@ -215,13 +273,13 @@ async function processAudio(pcmBuffer, ws, roomId) {
     debugWavHeader.writeUInt32LE(36 + finalAudioBuffer.length, 4);
     debugWavHeader.write('WAVE', 8);
     debugWavHeader.write('fmt ', 12);
-    debugWavHeader.writeUInt32LE(16, 16); // Subchunk1Size
-    debugWavHeader.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
-    debugWavHeader.writeUInt16LE(2, 22); // NumChannels (2 = Stereo)
-    debugWavHeader.writeUInt32LE(24000, 24); // SampleRate
-    debugWavHeader.writeUInt32LE(24000 * 2 * 2, 28); // ByteRate
-    debugWavHeader.writeUInt16LE(2 * 2, 32); // BlockAlign
-    debugWavHeader.writeUInt16LE(16, 34); // BitsPerSample
+    debugWavHeader.writeUInt32LE(16, 16); 
+    debugWavHeader.writeUInt16LE(1, 20); 
+    debugWavHeader.writeUInt16LE(1, 22); 
+    debugWavHeader.writeUInt32LE(24000, 24); 
+    debugWavHeader.writeUInt32LE(24000 * 1 * 2, 28); 
+    debugWavHeader.writeUInt16LE(1 * 2, 32); 
+    debugWavHeader.writeUInt16LE(16, 34); 
     debugWavHeader.write('data', 36);
     debugWavHeader.writeUInt32LE(finalAudioBuffer.length, 40);
     
@@ -232,13 +290,10 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
     // PACED STREAMING
-    // We send 1024 bytes of STEREO per chunk (10.66ms of audio at 24000Hz).
-    // We intentionally send chunks slightly FASTER than real-time (10.0ms instead of 10.66ms).
-    // This allows the ESP32 DMA buffer to slowly fill up without ever starving,
-    // and without ever filling up completely (which would block the WebSocket loop and corrupt data).
+    // We send 1024 bytes of MONO per chunk (21.3ms of audio at 24000Hz).
+    // This halves the SSL decryption load on the ESP32 CPU!
     const chunkSize = 1024; 
     
-    // PRE-FILL: Send the first 8 chunks (8KB) instantly to build a healthy buffer.
     const prefillChunks = 8;
     let i = 0;
     for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
@@ -246,7 +301,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     }
     
     const startTime = Date.now();
-    const pacingMs = 10.0; 
+    const pacingMs = 18.0; // Slightly faster than 21.3ms to build buffer
     let pacedChunkIndex = prefillChunks; 
     
     for (; i < finalAudioBuffer.length; i += chunkSize) {
