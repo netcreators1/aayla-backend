@@ -11,13 +11,22 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 // Serve the debug audio file
+app.get('/debug', (req, res) => {
+  const filePath = path.join(__dirname, 'debug_audio.wav');
+  if (fs.existsSync(filePath)) {
+    res.download(filePath);
+  } else {
+    res.status(404).send('Audio file not generated yet. Ask Aayla something first!');
+  }
+});
+
 app.get('/test-sine', async (req, res) => {
-  res.send("Generating 3-second sine wave and sending to all connected ESP32s...");
+  res.send("Generating 3-second sine wave and sending UNPACED...");
   
   const sampleRate = 24000;
   const durationSec = 3;
   const freq = 440.0;
-  const amplitude = 2000; // Low volume for safety
+  const amplitude = 4000; 
   
   const totalSamples = sampleRate * durationSec;
   const pcmResponseData = Buffer.alloc(totalSamples * 2);
@@ -27,7 +36,6 @@ app.get('/test-sine', async (req, res) => {
     pcmResponseData.writeInt16LE(sample, i * 2);
   }
   
-  // Apply padding (must be multiple of 4 bytes)
   let paddedLength = pcmResponseData.length;
   if (paddedLength % 4 !== 0) {
     paddedLength += (4 - (paddedLength % 4));
@@ -35,46 +43,18 @@ app.get('/test-sine', async (req, res) => {
   const finalAudioBuffer = Buffer.alloc(paddedLength);
   pcmResponseData.copy(finalAudioBuffer);
   
-  // Broadcast to all connected WebSockets
   wss.clients.forEach(async (ws) => {
       ws.send(JSON.stringify({ type: "audio_start", size: finalAudioBuffer.length }));
       
+      // SEND INSTANTLY (UNPACED) to rely on ESP32 TCP Zero Window and DMA blocking
+      // This completely eliminates public internet jitter buffer underruns!
       const chunkSize = 1024;
-      const prefillChunks = 8;
-      let i = 0;
-      
-      for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
+      for (let i = 0; i < finalAudioBuffer.length; i += chunkSize) {
         ws.send(finalAudioBuffer.slice(i, i + chunkSize));
       }
       
-      const startTime = Date.now();
-      const pacingMs = 18.0; 
-      let pacedChunkIndex = prefillChunks; 
-      
-      for (; i < finalAudioBuffer.length; i += chunkSize) {
-        ws.send(finalAudioBuffer.slice(i, i + chunkSize));
-        pacedChunkIndex++;
-        
-        const expectedTime = startTime + (pacedChunkIndex * pacingMs);
-        const waitTime = expectedTime - Date.now();
-        if (waitTime > 0) {
-          await new Promise(r => setTimeout(r, waitTime));
-        }
-      }
-      
-      setTimeout(() => {
-        ws.send(JSON.stringify({ type: "audio_end" }));
-      }, 500);
+      ws.send(JSON.stringify({ type: "audio_end" }));
   });
-});
-
-app.get('/debug', (req, res) => {
-  const filePath = path.join(__dirname, 'debug_audio.wav');
-  if (fs.existsSync(filePath)) {
-    res.download(filePath);
-  } else {
-    res.status(404).send('Audio file not generated yet. Ask Aayla something first!');
-  }
 });
 
 // Utility to create a WAV header for 16-bit, 16kHz, mono PCM
@@ -289,41 +269,32 @@ async function processAudio(pcmBuffer, ws, roomId) {
   
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
-    // PACED STREAMING
-    // We send 1024 bytes of MONO per chunk (21.3ms of audio at 24000Hz).
-    // This halves the SSL decryption load on the ESP32 CPU!
+    // SEND INSTANTLY (UNPACED) to rely on ESP32 TCP Zero Window and DMA blocking
+    // This completely eliminates public internet jitter buffer underruns!
     const chunkSize = 1024; 
     
-    const prefillChunks = 8;
-    let i = 0;
-    for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
+    for (let i = 0; i < finalAudioBuffer.length; i += chunkSize) {
       ws.send(finalAudioBuffer.slice(i, i + chunkSize));
     }
     
-    const startTime = Date.now();
-    const pacingMs = 18.0; // Slightly faster than 21.3ms to build buffer
-    let pacedChunkIndex = prefillChunks; 
-    
-    for (; i < finalAudioBuffer.length; i += chunkSize) {
-      ws.send(finalAudioBuffer.slice(i, i + chunkSize));
-      pacedChunkIndex++;
-      
-      const expectedTime = startTime + (pacedChunkIndex * pacingMs);
-      const waitTime = expectedTime - Date.now();
-      if (waitTime > 0) {
-        await new Promise(res => setTimeout(res, waitTime));
-      }
-    }
-    // Tell the ESP32 we are done sending audio so it can go back to IDLE
-    ws.send(JSON.stringify({ type: 'audio_end' }));
-    
+    // We do NOT send audio_end here immediately!
+    // Because we just blasted the entire file into the TCP socket, the ESP32 might take 3 seconds to play it!
+    // If we send audio_end, it will cut off the playback instantly.
+    // We just wait for the ESP32 to finish playing on its own.
+    // Wait, the ESP32 needs audio_end to go back to IDLE state!
+    // So we just guess the duration:
+    const durationMs = (finalAudioBuffer.length / 2 / 24000) * 1000;
+    setTimeout(() => {
+        ws.send(JSON.stringify({ type: 'audio_end' }));
+    }, durationMs + 1000);
+
   } catch (error) {
     console.error("Error processing audio:", error);
-    ws.send(JSON.stringify({ type: "error", message: error.message || "Unknown Server Error" }));
+    ws.send(JSON.stringify({ type: "trace", message: `Error processing audio: ${error.message}` }));
   }
 }
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Aayla Voice Bot server running on port ${PORT}`);
+  console.log(`Aayla Voice Backend running on port ${PORT}`);
 });
