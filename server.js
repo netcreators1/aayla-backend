@@ -48,7 +48,7 @@ app.get('/test-sine', async (req, res) => {
       
       const chunkSize = 1024;
       // Prefill 15 chunks (15KB = 312ms of audio) instantly to absorb network jitter
-      const prefillChunks = 15;
+      const prefillChunks = 5;
       let i = 0;
       
       for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
@@ -58,7 +58,7 @@ app.get('/test-sine', async (req, res) => {
       const startTime = Date.now();
       // 1024 bytes of 24kHz Mono = 21.33ms. We pace at 19.5ms to send slightly FASTER than real-time,
       // which guarantees the buffer stays full without hitting TCP Zero Window!
-      const pacingMs = 60.0; 
+      const pacingMs = 64.0; 
       let pacedChunkIndex = prefillChunks; 
       
       for (; i < finalAudioBuffer.length; i += chunkSize) {
@@ -88,8 +88,8 @@ function createWavHeader(dataLength) {
   header.writeUInt32LE(16, 16); // Subchunk1Size
   header.writeUInt16LE(1, 20); // AudioFormat (PCM)
   header.writeUInt16LE(1, 22); // NumChannels
-  header.writeUInt32LE(8000, 24); // SampleRate
-  header.writeUInt32LE(8000 * 2, 28); // ByteRate
+  header.writeUInt32LE(16000, 24); // SampleRate
+  header.writeUInt32LE(16000 * 2, 28); // ByteRate
   header.writeUInt16LE(2, 32); // BlockAlign
   header.writeUInt16LE(16, 34); // BitsPerSample
   header.write('data', 36);
@@ -239,18 +239,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     let pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     
-    let maxBefore = 0;
-    for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
-      let sample = Math.abs(pcmResponseData.readInt16LE(i));
-      if (sample > maxBefore) maxBefore = sample;
-    }
-
-    // BREADBOARD SAFE VOLUME LIMITER:
-    // We cap the volume at 4000 to prevent USB brownouts on the breadboard!
-    let optimalMultiplier = 1.0;
-    if (maxBefore > 0) {
-      optimalMultiplier = 4000.0 / maxBefore; 
-    }
+    let optimalMultiplier = 0.3;
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
@@ -277,7 +266,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     debugWavHeader.writeUInt32LE(16, 16); 
     debugWavHeader.writeUInt16LE(1, 20); 
     debugWavHeader.writeUInt16LE(1, 22); 
-    debugWavHeader.writeUInt32LE(8000, 24); 
+    debugWavHeader.writeUInt32LE(16000, 24); 
     debugWavHeader.writeUInt32LE(8000 * 1 * 2, 28); 
     debugWavHeader.writeUInt16LE(1 * 2, 32); 
     debugWavHeader.writeUInt16LE(16, 34); 
@@ -291,7 +280,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: 'audio_start', size: finalAudioBuffer.length }));
     
     const chunkSize = 1024;
-    const prefillChunks = 15; // 312ms shock absorption
+    const prefillChunks = 5; // 312ms shock absorption
     let i = 0;
     
     for (; i < finalAudioBuffer.length && i < prefillChunks * chunkSize; i += chunkSize) {
@@ -300,7 +289,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     const startTime = Date.now();
     // 1024 bytes of 24kHz Mono = 21.33ms. Pace at 19.5ms (faster than real-time)
-    const pacingMs = 60.0; 
+    const pacingMs = 64.0; 
     let pacedChunkIndex = prefillChunks; 
     
     for (; i < finalAudioBuffer.length; i += chunkSize) {
@@ -329,3 +318,5 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Aayla Voice Backend running on port ${PORT}`);
 });
+
+
