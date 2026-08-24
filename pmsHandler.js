@@ -37,7 +37,10 @@ async function fetchMenuPrices() {
   const prices = {};
   
   try {
-    const foodRes = await fetch(PUBLIC_MENU_URL);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+    
+    const foodRes = await fetch(PUBLIC_MENU_URL, { signal: controller.signal });
     const foodCsv = await foodRes.text();
     Papa.parse(foodCsv, {
       header: true,
@@ -51,7 +54,7 @@ async function fetchMenuPrices() {
       }
     });
 
-    const liquorRes = await fetch(PUBLIC_LIQUOR_URL);
+    const liquorRes = await fetch(PUBLIC_LIQUOR_URL, { signal: controller.signal });
     const liquorCsv = await liquorRes.text();
     Papa.parse(liquorCsv, {
       header: true,
@@ -65,10 +68,14 @@ async function fetchMenuPrices() {
       }
     });
     
+    clearTimeout(timeoutId);
+    
     menuCache = prices;
     lastFetch = now;
   } catch (error) {
-    console.error("Error fetching menu for pricing", error);
+    console.error("Error fetching menu for pricing (likely timeout)", error.message);
+    // If it fails, we just return the empty prices object (or the stale cache if we had one)
+    if (menuCache) return menuCache;
   }
   
   return prices;
