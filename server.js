@@ -239,7 +239,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     let pcmResponseData = Buffer.from(await ttsResponse.arrayBuffer());
     
-    let optimalMultiplier = 0.3;
+    let optimalMultiplier = 0.05;
 
     for (let i = 0; i < pcmResponseData.length - 1; i += 2) {
       let sample = pcmResponseData.readInt16LE(i);
@@ -266,7 +266,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     debugWavHeader.writeUInt32LE(16, 16); 
     debugWavHeader.writeUInt16LE(1, 20); 
     debugWavHeader.writeUInt16LE(1, 22); 
-    debugWavHeader.writeUInt32LE(16000, 24); 
+    debugWavHeader.writeUInt32LE(8000, 24); 
     debugWavHeader.writeUInt32LE(8000 * 1 * 2, 28); 
     debugWavHeader.writeUInt16LE(1 * 2, 32); 
     debugWavHeader.writeUInt16LE(16, 34); 
@@ -318,5 +318,6 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Aayla Voice Backend running on port ${PORT}`);
 });
+
 
 
