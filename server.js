@@ -111,7 +111,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: `Response: ${responseText}` }));
 
     ws.send(JSON.stringify({ type: "trace", message: "Calling Deepgram TTS (linear16)..." }));
-    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&sample_rate=16000', {
+    const ttsResponse = await fetch('https://api.deepgram.com/v1/speak?model=aura-asteria-en&encoding=linear16&sample_rate=16000&container=none', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -120,8 +120,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
       body: JSON.stringify({ text: responseText })
     });
 
-    const rawWavBuffer = Buffer.from(await ttsResponse.arrayBuffer());
-    const rawPcm = rawWavBuffer.slice(44); // Strip WAV header to get pure PCM
+    const rawPcm = Buffer.from(await ttsResponse.arrayBuffer()); // No WAV header to slice!
 
     ws.send(JSON.stringify({ type: 'audio_start', size: rawPcm.length }));
     const chunkSize = 1024;
