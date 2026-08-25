@@ -127,11 +127,17 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const rawPcm = Buffer.from(await ttsResponse.arrayBuffer()); // No WAV header to slice!
 
     ws.send(JSON.stringify({ type: 'audio_start', size: rawPcm.length }));
-    const chunkSize = 1024;
+    
+    // Tiny chunk size (256 bytes) to prevent ESP32 WebSocket buffer truncation!
+    // Truncated TCP packets cause massive audio loss, which sounds like harsh distortion.
+    const chunkSize = 256; 
+    
     for (let i = 0; i < rawPcm.length; i += chunkSize) {
       ws.send(rawPcm.slice(i, i + chunkSize));
-      await new Promise(r => setTimeout(r, 26)); // Pacing at ~26ms per 1024 bytes (slightly faster than real-time)
+      // Give the ESP32 a tiny breather to process the chunk and push it to DMA
+      await new Promise(r => setTimeout(r, 5));
     }
+    
     ws.send(JSON.stringify({ type: 'audio_end' }));
 
   } catch (error) {
