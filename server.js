@@ -83,14 +83,16 @@ async function processAudio(pcmBuffer, ws, roomId) {
     const guestName = await getGuestName(roomId);
     
     const prompt = `You are Aayla, a hotel AI. Guest: ${guestName}, Room: ${roomId}.
-    1. Turn ON/OFF device -> "iot_control"
-    2. Food/drinks -> "order_food"
-    3. Room cleaning/towels/repairs -> "housekeeping"
-    4. Laundry -> "laundry"
-    5. Sales/revenue -> "get_revenue"
-    6. If guest says "Thank you for watching" or "subscribe", output "general_query" with "I couldn't hear you clearly."
-    7. Otherwise -> "general_query"
-    Respond in JSON only.
+    Map the guest request to one of the following actions.
+    Respond ONLY with a JSON object matching this schema:
+    {
+      "action": "order_food" | "housekeeping" | "laundry" | "get_revenue" | "iot_control" | "general_query",
+      "items": ["coffee", "sandwich"], // list of items if order_food
+      "task": "clean room", // if housekeeping or laundry
+      "device": "AC", // if iot_control
+      "state": "on", // if iot_control
+      "response": "Answer to general query" // if general_query
+    }
     Guest request: "${userText}"`;
 
     const llmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -107,6 +109,8 @@ async function processAudio(pcmBuffer, ws, roomId) {
     });
     
     const intentJSON = (await llmResponse.json()).choices[0].message.content;
+    ws.send(JSON.stringify({ type: "trace", message: `LLM Output: ${intentJSON}` }));
+    
     const responseText = await processIntent(intentJSON, roomId, guestName);
     ws.send(JSON.stringify({ type: "trace", message: `Response: ${responseText}` }));
 
