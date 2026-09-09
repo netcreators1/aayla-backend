@@ -128,14 +128,15 @@ async function processAudio(pcmBuffer, ws, roomId) {
 
     ws.send(JSON.stringify({ type: 'audio_start', size: rawPcm.length }));
     
-    // Tiny chunk size (256 bytes) to prevent ESP32 WebSocket buffer truncation!
-    // Truncated TCP packets cause massive audio loss, which sounds like harsh distortion.
-    const chunkSize = 256; 
+    // Send in small, safely-paced chunks to prevent ESP32 packet truncation.
+    // Truncation causes byte-misalignment, which swaps the Endianness and creates pure hissing/white noise!
+    const chunkSize = 512; // 512 bytes = 16ms of audio
     
     for (let i = 0; i < rawPcm.length; i += chunkSize) {
       ws.send(rawPcm.slice(i, i + chunkSize));
-      // Give the ESP32 a tiny breather to process the chunk and push it to DMA
-      await new Promise(r => setTimeout(r, 5));
+      // Pace the delivery slightly faster than real-time (16ms of audio -> 10ms wait)
+      // This prevents starvation while preventing buffer overflows
+      await new Promise(r => setTimeout(r, 10));
     }
     
     ws.send(JSON.stringify({ type: 'audio_end' }));
