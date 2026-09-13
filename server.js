@@ -86,11 +86,14 @@ async function processAudio(pcmBuffer, ws, roomId) {
     Map the guest request to one of the following actions.
     Respond ONLY with a JSON object matching this schema:
     {
-      "action": "order_food" | "housekeeping" | "laundry" | "get_revenue" | "iot_control" | "general_query",
+      "action": "order_food" | "housekeeping" | "laundry" | "get_revenue" | "iot_control" | "book_cab" | "play_music" | "alarm_set" | "general_query",
       "items": ["coffee", "sandwich"], // list of items if order_food
       "task": "clean room", // if housekeeping or laundry
       "device": "AC", // if iot_control
       "state": "on", // if iot_control
+      "destination": "airport", // if book_cab
+      "time": "7:00 AM", // if alarm_set
+      "song": "jazz", // if play_music
       "response": "Answer to general query" // if general_query
     }
     Guest request: "${userText}"`;
