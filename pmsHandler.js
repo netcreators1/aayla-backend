@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const chrono = require('chrono-node');
 const Papa = require('papaparse');
 
 // We use the same service account as the Aiosell integration
@@ -283,14 +284,15 @@ async function processIntent(intentText, roomId, guestName = "VoiceBot Guest") {
     }
 
     else if (intent.action === "book_cab") {
-      const requestRef = db.ref("cabBookings").push();
+      const requestRef = db.ref("roomRequests").push(); // Pushes directly to the dashboard's Room Requests section!
       
       const destination = intent.destination || "your requested destination";
       
       const payload = {
         roomNumber: roomId || "UNKNOWN",
         guestName: guestName,
-        destination: destination,
+        requestType: "Cab Booking",
+        notes: `Destination: ${destination} (Requested via Voice AI)`,
         status: "Pending",
         timestamp: new Date().toISOString(),
         source: "VoiceBot Aayla"
@@ -307,10 +309,14 @@ async function processIntent(intentText, roomId, guestName = "VoiceBot Guest") {
       const requestRef = db.ref("alarms").push();
       const alarmTime = intent.time || "your requested time";
       
+      let parsedDate = chrono.parseDate(alarmTime);
+      let targetIso = parsedDate ? parsedDate.toISOString() : null;
+
       const payload = {
         roomNumber: roomId || "UNKNOWN",
         guestName: guestName,
-        time: alarmTime,
+        timeString: alarmTime,
+        targetTime: targetIso,
         status: "Active",
         timestamp: new Date().toISOString()
       };
@@ -319,7 +325,12 @@ async function processIntent(intentText, roomId, guestName = "VoiceBot Guest") {
       await Promise.race([requestRef.set(payload), timeout]);
 
       const greeting = guestName !== "Guest" && guestName !== "VoiceBot Guest" ? `Okay, ${guestName}. ` : "Okay. ";
-      return `${greeting}I have set your alarm for ${alarmTime}.`;
+      
+      if (targetIso) {
+          return `${greeting}I have set your alarm for ${alarmTime}.`;
+      } else {
+          return `${greeting}I have saved your alarm for ${alarmTime}, but I wasn't entirely sure of the exact time.`;
+      }
     }
 
     else if (intent.action === "play_music") {
@@ -339,4 +350,4 @@ async function processIntent(intentText, roomId, guestName = "VoiceBot Guest") {
   }
 }
 
-module.exports = { processIntent, getGuestName };
+module.exports = { processIntent, getGuestName, db };
