@@ -308,8 +308,8 @@ async function processIntent(intentText, roomId, guestName = "VoiceBot Guest") {
     else if (intent.action === "alarm_set") {
       const requestRef = db.ref("alarms").push();
       const alarmTime = intent.time || "your requested time";
-      
-      let parsedDate = chrono.parseDate(alarmTime);
+      // Parse date with +330 minutes offset for Indian Standard Time (IST)
+      let parsedDate = chrono.parseDate(alarmTime, new Date(), { timezone: 330 });
       let targetIso = parsedDate ? parsedDate.toISOString() : null;
 
       const payload = {
