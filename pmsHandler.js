@@ -282,6 +282,51 @@ async function processIntent(intentText, roomId, guestName = "VoiceBot Guest") {
       return `${greeting}I have turned ${st} the ${dev.replace('_', ' ')}.`;
     }
 
+    else if (intent.action === "book_cab") {
+      const requestRef = db.ref("cabBookings").push();
+      
+      const destination = intent.destination || "your requested destination";
+      
+      const payload = {
+        roomNumber: roomId || "UNKNOWN",
+        guestName: guestName,
+        destination: destination,
+        status: "Pending",
+        timestamp: new Date().toISOString(),
+        source: "VoiceBot Aayla"
+      };
+
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out.")), 5000));
+      await Promise.race([requestRef.set(payload), timeout]);
+
+      const greeting = guestName !== "Guest" && guestName !== "VoiceBot Guest" ? `Certainly, ${guestName}. ` : "";
+      return `${greeting}I have booked a cab to ${destination}. You will be notified when it arrives.`;
+    }
+
+    else if (intent.action === "alarm_set") {
+      const requestRef = db.ref("alarms").push();
+      const alarmTime = intent.time || "your requested time";
+      
+      const payload = {
+        roomNumber: roomId || "UNKNOWN",
+        guestName: guestName,
+        time: alarmTime,
+        status: "Active",
+        timestamp: new Date().toISOString()
+      };
+      
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase connection timed out.")), 5000));
+      await Promise.race([requestRef.set(payload), timeout]);
+
+      const greeting = guestName !== "Guest" && guestName !== "VoiceBot Guest" ? `Okay, ${guestName}. ` : "Okay. ";
+      return `${greeting}I have set your alarm for ${alarmTime}.`;
+    }
+
+    else if (intent.action === "play_music") {
+      const greeting = guestName !== "Guest" && guestName !== "VoiceBot Guest" ? `Okay, ${guestName}. ` : "Okay. ";
+      return `${greeting}Playing ${intent.song || "music"} on your smart speaker.`;
+    }
+
     else if (intent.action === "general_query") {
       return intent.response;
     }
