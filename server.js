@@ -144,6 +144,16 @@ async function processAudio(pcmBuffer, ws, roomId) {
     
     ws.send(JSON.stringify({ type: 'audio_end' }));
 
+    // If the intent was music, trigger the ESP8266Audio MP3 stream!
+    if (intentJSON.includes('"play_music"')) {
+      setTimeout(() => {
+        ws.send(JSON.stringify({ 
+          type: 'music', 
+          url: 'http://stream.srg-ssr.ch/m/rsj/mp3_128' // Radio Swiss Jazz (Royalty Free)
+        }));
+      }, 800); // Wait for TTS to finish speaking before handing over I2S driver
+    }
+
   } catch (error) {
     console.error(error);
     ws.send(JSON.stringify({ type: "trace", message: `Error: ${error.message}` }));
