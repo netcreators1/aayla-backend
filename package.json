@@ -7,6 +7,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "chrono-node": "^2.10.1",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "firebase-admin": "^12.1.0",
