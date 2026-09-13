@@ -149,7 +149,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
       setTimeout(() => {
         ws.send(JSON.stringify({ 
           type: 'music', 
-          url: 'http://stream.srg-ssr.ch/m/rsj/mp3_128' // Radio Swiss Jazz (Royalty Free)
+          url: 'http://stream.zeno.fm/2rbb9t6z338uv' // Popular Indian Instrumental Radio Stream
         }));
       }, 800); // Wait for TTS to finish speaking before handing over I2S driver
     }
