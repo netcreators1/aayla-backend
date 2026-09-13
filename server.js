@@ -150,7 +150,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
       setTimeout(() => {
         ws.send(JSON.stringify({ 
           type: 'music', 
-          url: 'http://radio2bindia.out.airtime.pro:8000/radio2bindia_a' // Verified Live Indian Radio Stream
+          url: 'http://192.99.8.192:5032/;stream' // FnF.FM Bollywood Hits
         }));
       }, 800); // Wait for TTS to finish speaking before handing over I2S driver
     }
