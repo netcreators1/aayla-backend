@@ -4,7 +4,7 @@ const { WebSocketServer } = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { processIntent, getGuestName } = require('./pmsHandler');
+const { processIntent, getGuestName, db } = require('./pmsHandler');
 
 const app = express();
 const server = http.createServer(app);
@@ -40,7 +40,8 @@ wss.on('connection', (ws) => {
         if (data.type === 'start') {
           console.log(`Started recording for Room: ${data.roomId}`);
           roomId = data.roomId;
-          audioBuffer = [];
+          ws.roomId = roomId; // Attach to ws so the alarm cron can find it!
+          audioBuffer = []; // clear buffer
         } else if (data.type === 'stop') {
           console.log('Stopped recording, processing audio...');
           await processAudio(Buffer.concat(audioBuffer), ws, roomId);
@@ -159,5 +160,37 @@ async function processAudio(pcmBuffer, ws, roomId) {
     ws.send(JSON.stringify({ type: "trace", message: `Error: ${error.message}` }));
   }
 }
+
+// --- ALARM CRON JOB ---
+setInterval(async () => {
+  try {
+    const alarmsSnapshot = await db.ref('alarms').orderByChild('status').equalTo('Active').once('value');
+    if (alarmsSnapshot.exists()) {
+      const now = new Date();
+      alarmsSnapshot.forEach((childSnapshot) => {
+        const alarm = childSnapshot.val();
+        if (alarm.targetTime) {
+          const target = new Date(alarm.targetTime);
+          if (now >= target) {
+            console.log(`Triggering alarm for room ${alarm.roomNumber}!`);
+            
+            // Find the connected websocket for this room
+            wss.clients.forEach((client) => {
+              // WebSocket.OPEN is 1
+              if (client.readyState === 1 && client.roomId === alarm.roomNumber) {
+                client.send(JSON.stringify({ type: 'alarm_trigger' }));
+              }
+            });
+            
+            // Mark as triggered so we don't trigger it again
+            childSnapshot.ref.update({ status: 'Triggered' });
+          }
+        }
+      });
+    }
+  } catch (err) {
+    console.error("Alarm Cron Error:", err);
+  }
+}, 5000); // Check every 5 seconds
 
 server.listen(process.env.PORT || 3000, () => console.log('Backend running'));
