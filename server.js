@@ -149,7 +149,7 @@ async function processAudio(pcmBuffer, ws, roomId) {
       setTimeout(() => {
         ws.send(JSON.stringify({ 
           type: 'music', 
-          url: 'http://stream.zeno.fm/2rbb9t6z338uv' // Popular Indian Instrumental Radio Stream
+          url: 'http://radio2bindia.out.airtime.pro:8000/radio2bindia_a' // Verified Live Indian Radio Stream
         }));
       }, 800); // Wait for TTS to finish speaking before handing over I2S driver
     }
